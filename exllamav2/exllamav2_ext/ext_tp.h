@@ -9,7 +9,7 @@
 
 //#define TP_MULTITHREADED
 
-//#include <nccl.h>
+#include <nccl.h>
 #include "cpp/threadpool.h"
 #include "cuda/tp.cuh"
 
