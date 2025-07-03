@@ -90,6 +90,7 @@ setup_kwargs = (
                 ],
                 extra_compile_args=extra_compile_args,
                 libraries=["cublas"] if windows else [],
+                include_dirs=["/usr/include", "/usr/local/cuda-12.8/include"],
             )
         ],
         "cmdclass": {"build_ext": cpp_extension.BuildExtension},
