@@ -183,6 +183,7 @@ class ExLlamaV2Config:
         self.alt_rope_method = None
 
         self.no_flash_attn = 'EXLLAMA_NO_FLASH_ATTN' in os.environ
+        self.no_xformers = 'EXLLAMA_NO_XFORMERS' in os.environ
         self.no_sdpa = 'EXLLAMA_NO_SDPA' in os.environ
         self.load_in_q4 = False
         self.no_graphs = 'EXLLAMA_NO_GRAPHS' in os.environ

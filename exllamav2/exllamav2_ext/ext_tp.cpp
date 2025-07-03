@@ -70,24 +70,27 @@ ExtTPContext::ExtTPContext
     cudaHostAlloc((void**)&tp_data, sizeof(ExtTPData), cudaHostAllocMapped);
     init_tp_data(tp_data);
 
-    // Check P2P capabilities
-    can_p2p = true;
-    if (all_devices.size() > 1) {
-        for (int i = 0; i < all_devices.size(); ++i) {
-            for (int j = i + 1; j < all_devices.size(); ++j) {
-                int canAccess;
-                cudaSetDevice(all_devices[i]);
-                cuda_check(cudaDeviceCanAccessPeer(&canAccess, all_devices[i], all_devices[j]));
-                if (canAccess == 0) {
-                    can_p2p = false;
-                    fprintf(stderr, "CUDA Warning: Direct P2P access not available between device %d and %d. Falling back to CPU bounce.\n", all_devices[i], all_devices[j]);
-                    break;
+    can_p2p = false;
+    if (enable_p2p) {
+        // Check P2P capabilities
+        can_p2p = true;
+        if (all_devices.size() > 1) {
+            for (int i = 0; i < all_devices.size(); ++i) {
+                for (int j = i + 1; j < all_devices.size(); ++j) {
+                    int canAccess;
+                    cudaSetDevice(all_devices[i]);
+                    cuda_check(cudaDeviceCanAccessPeer(&canAccess, all_devices[i], all_devices[j]));
+                    if (canAccess == 0) {
+                        can_p2p = false;
+                        fprintf(stderr, "CUDA Warning: Direct P2P access not available between device %d and %d. Falling back to CPU bounce.\n", all_devices[i], all_devices[j]);
+                        break;
+                    }
                 }
+                if (!can_p2p) break;
             }
-            if (!can_p2p) break;
+        } else {
+            can_p2p = false; // No P2P needed for single device
         }
-    } else {
-        can_p2p = false; // No P2P needed for single device
     }
 
     if (enable_p2p && can_p2p) {
