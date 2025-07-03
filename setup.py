@@ -1,6 +1,7 @@
 from setuptools import setup, Extension
 import importlib.util
 import os
+import site
 
 if torch := importlib.util.find_spec("torch") is not None:
     from torch.utils import cpp_extension
@@ -90,7 +91,7 @@ setup_kwargs = (
                 ],
                 extra_compile_args=extra_compile_args,
                 libraries=["cublas"] if windows else [],
-                include_dirs=["/usr/include", "/usr/local/cuda-12.8/include"],
+                include_dirs=[os.path.join(s, "nvidia", "nccl", "include") for s in site.getsitepackages() if os.path.exists(os.path.join(s, "nvidia", "nccl", "include"))],
             )
         ],
         "cmdclass": {"build_ext": cpp_extension.BuildExtension},
