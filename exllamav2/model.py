@@ -410,11 +410,10 @@ class ExLlamaV2:
         gpu_split: list[float] | None = None,
         callback: Callable[[int, int], None] | None = None,
         callback_gen: Callable[[int, int], None] | None = None,
-        expect_cache_tokens: int = 0,
         expect_cache_base: type = None
     ):
         self.config.no_graphs = True
-        self.tp_context = TPContext(self, gpu_split, expect_cache_tokens, expect_cache_base)
+        self.tp_context = TPContext(self, gpu_split, expect_cache_tokens, expect_cache_base, self.config.enable_p2p)
 
         # Create device tensors
 

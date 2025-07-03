@@ -30,14 +30,16 @@ ExtTPContext::ExtTPContext
     std::vector<std::tuple<int, int, int>> _rs_split,
     std::vector<std::tuple<int, int, int>> _q_split,
     std::vector<torch::Tensor> _pinned_temp,
-    std::vector<cudaStream_t> _streams
+    std::vector<cudaStream_t> _streams,
+    bool _enable_p2p
 ) :
     kv_split(_kv_split),
     id_split(_id_split),
     vc_split(_vc_split),
     rs_split(_rs_split),
     q_split(_q_split),
-    streams(_streams)
+    streams(_streams),
+    enable_p2p(_enable_p2p)
 {
     for (const auto &pt : _pinned_temp)
     {
@@ -68,12 +70,34 @@ ExtTPContext::ExtTPContext
     cudaHostAlloc((void**)&tp_data, sizeof(ExtTPData), cudaHostAllocMapped);
     init_tp_data(tp_data);
 
-//    comms.resize(all_devices.size());
-//    ncclCommInitAll(&comms[0], all_devices.size(), &all_devices[0]);
-//    comms_index.resize(streams.size());
-//    for (int i = 0; i < all_devices.size(); ++i)
-//        comms_index[all_devices[i]] = i;
+    // Check P2P capabilities
+    can_p2p = true;
+    if (all_devices.size() > 1) {
+        for (int i = 0; i < all_devices.size(); ++i) {
+            for (int j = i + 1; j < all_devices.size(); ++j) {
+                int canAccess;
+                cudaSetDevice(all_devices[i]);
+                cuda_check(cudaDeviceCanAccessPeer(&canAccess, all_devices[i], all_devices[j]));
+                if (canAccess == 0) {
+                    can_p2p = false;
+                    fprintf(stderr, "CUDA Warning: Direct P2P access not available between device %d and %d. Falling back to CPU bounce.\n", all_devices[i], all_devices[j]);
+                    break;
+                }
+            }
+            if (!can_p2p) break;
+        }
+    } else {
+        can_p2p = false; // No P2P needed for single device
+    }
 
+    if (enable_p2p && can_p2p) {
+        // NCCL initialization
+        comms.resize(all_devices.size());
+        ncclCommInitAll(&comms[0], all_devices.size(), &all_devices[0]);
+        comms_index.resize(streams.size());
+        for (int i = 0; i < all_devices.size(); ++i)
+            comms_index[all_devices[i]] = i;
+    }
 }
 
 ExtTPContext::~ExtTPContext()
@@ -82,8 +106,10 @@ ExtTPContext::~ExtTPContext()
         delete thread_pool;
     #endif
 
-//    for (int i = 0; i < comms.size(); ++i)
-//        ncclCommDestroy(comms[i]);
+    if (enable_p2p && can_p2p) {
+        for (int i = 0; i < comms.size(); ++i)
+            ncclCommDestroy(comms[i]);
+    }
 
     cudaFreeHost(tp_data);
 }
@@ -96,7 +122,8 @@ uintptr_t make_tp_context
     std::vector<std::tuple<int, int, int>> rs_split,
     std::vector<std::tuple<int, int, int>> q_split,
     std::vector<torch::Tensor> pinned_temp,
-    std::vector<uintptr_t> streams
+    std::vector<uintptr_t> streams,
+    bool enable_p2p
 )
 {
     std::vector<cudaStream_t> streams_;
@@ -111,7 +138,8 @@ uintptr_t make_tp_context
         rs_split,
         q_split,
         pinned_temp,
-        streams_
+        streams_,
+        enable_p2p
     );
 
     return reinterpret_cast<uintptr_t> (ctx);
@@ -142,40 +170,57 @@ void tp_broadcast
     size_t size = source.numel() * 2;
     TORCH_CHECK(size <= ctx->pinned_size, "Temporary tensor is too small")
 
-    void* source_g = NULL;
-
-    int src_dev = source.device().index();
-
-    if (src_dev >= 0)
-    {
+    // If P2P is enabled and available, use NCCL broadcast
+    if (ctx->enable_p2p && ctx->can_p2p && ctx->all_devices.size() > 1) {
+        int src_dev = source.device().index();
         cudaSetDevice(src_dev);
         cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
-        source_g = (void*) source.data_ptr();
-        cuda_check(cudaMemcpyAsync(ctx->pinned_temp[buffer], source_g, size, cudaMemcpyDeviceToHost, stream));
+        ncclGroupStart();
+        for (int i = 0; i < targets.size(); ++i) {
+            int dev = targets[i].device().index();
+            int comms_i = ctx->comms_index[dev];
+            ncclBroadcast(source.data_ptr(), targets[i].data_ptr(), source.numel(), ncclFloat16, src_dev, ctx->comms[comms_i], stream);
+        }
+        ncclGroupEnd();
     }
-
-    std::vector<std::tuple<int, int, int>> split;
-    switch(broadcast_type)
+    else // Fallback to CPU bounce
     {
-        case BROADCAST_KV: split = ctx->kv_split; break;
-        case BROADCAST_ID: split = ctx->id_split; break;
-        case BROADCAST_VC: split = ctx->vc_split; break;
-        case BROADCAST_RS: split = ctx->rs_split; break;
-        case BROADCAST_Q: split = ctx->q_split; break;
-    }
+        void* source_g = NULL;
 
-    for (int i = 0; i < split.size(); ++i)
-    {
-        int dev = std::get<0>(split[i]);
-        if (t_device != -1 && t_device != dev) continue;
+        int src_dev = source.device().index();
 
-        void* target = (void*) targets[i].data_ptr();
-        if (target == source_g) continue;
+        if (src_dev >= 0)
+        {
+            cudaSetDevice(src_dev);
+            cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
-        cudaSetDevice(dev);
-        cudaStream_t stream = ctx->streams[dev];
-        cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
+            source_g = (void*) source.data_ptr();
+            cuda_check(cudaMemcpyAsync(ctx->pinned_temp[buffer], source_g, size, cudaMemcpyDeviceToHost, stream));
+        }
+
+        std::vector<std::tuple<int, int, int>> split;
+        switch(broadcast_type)
+        {
+            case BROADCAST_KV: split = ctx->kv_split; break;
+            case BROADCAST_ID: split = ctx->id_split; break;
+            case BROADCAST_VC: split = ctx->vc_split; break;
+            case BROADCAST_RS: split = ctx->rs_split; break;
+            case BROADCAST_Q: split = ctx->q_split; break;
+        }
+
+        for (int i = 0; i < split.size(); ++i)
+        {
+            int dev = std::get<0>(split[i]);
+            if (t_device != -1 && t_device != dev) continue;
+
+            void* target = (void*) targets[i].data_ptr();
+            if (target == source_g) continue;
+
+            cudaSetDevice(dev);
+            cudaStream_t stream = ctx->streams[dev];
+            cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
+        }
     }
 
     tp_cross_device_barrier(tp_context, broadcast_type, t_device);
@@ -236,59 +281,72 @@ void tp_gather_barrier
     int out_cols = std::get<2>(split[split.size() - 1]) * dim;
     int esize = inputs[0].element_size();
 
-    for (int i = 0; i < split.size(); ++i)
-    {
-        int dev = std::get<0>(split[i]);
-        if (t_device != -1 && t_device != dev) continue;
-
-        uint8_t* src = (uint8_t*) inputs[i].data_ptr();
-        int src_cols = inputs[i].size(1);
-        uint8_t* dst = ((uint8_t*) ctx->pinned_temp[buffer]) + std::get<1>(split[i]) * esize * dim;
-
-        cudaSetDevice(dev);
-        cuda_check(cudaMemcpy2DAsync
-        (
-            dst,
-            out_cols * esize,
-            src,
-            src_cols * esize,
-            src_cols * esize,
-            out_rows,
-            cudaMemcpyDeviceToHost,
-            ctx->streams[dev]
-        ));
+    // If P2P is enabled and available, use NCCL AllGather
+    if (ctx->enable_p2p && ctx->can_p2p && ctx->all_devices.size() > 1) {
+        ncclGroupStart();
+        for (int i = 0; i < inputs.size(); ++i) {
+            int dev = inputs[i].device().index();
+            int comms_i = ctx->comms_index[dev];
+            ncclAllGather(inputs[i].data_ptr(), targets[i].data_ptr(), inputs[i].numel(), ncclFloat16, ctx->comms[comms_i], ctx->streams[dev]);
+        }
+        ncclGroupEnd();
     }
-
-    if (broadcast_type_target == -2) return;
-
-    if (barrier)
-        barrier->arrive_and_wait();
-
-    tp_cross_device_barrier(tp_context, broadcast_type, t_device);
-
-    if (broadcast_type_target == -1) return;
-
-    size_t size = targets[0].numel() * 2;
-
-    switch(broadcast_type_target)
+    else // Fallback to CPU bounce
     {
-        case BROADCAST_KV: split = ctx->kv_split; break;
-        case BROADCAST_ID: split = ctx->id_split; break;
-        case BROADCAST_VC: split = ctx->vc_split; break;
-        case BROADCAST_RS: split = ctx->rs_split; break;
-        case BROADCAST_Q: split = ctx->q_split; break;
-    }
+        for (int i = 0; i < split.size(); ++i)
+        {
+            int dev = std::get<0>(split[i]);
+            if (t_device != -1 && t_device != dev) continue;
 
-    for (int i = 0; i < split.size(); ++i)
-    {
-        int dev = std::get<0>(split[i]);
-        if (t_device != -1 && t_device != dev) continue;
+            uint8_t* src = (uint8_t*) inputs[i].data_ptr();
+            int src_cols = inputs[i].size(1);
+            uint8_t* dst = ((uint8_t*) ctx->pinned_temp[buffer]) + std::get<1>(split[i]) * esize * dim;
 
-        void* target = (void*) targets[i].data_ptr();
+            cudaSetDevice(dev);
+            cuda_check(cudaMemcpy2DAsync
+            (
+                dst,
+                out_cols * esize,
+                src,
+                src_cols * esize,
+                src_cols * esize,
+                out_rows,
+                cudaMemcpyDeviceToHost,
+                ctx->streams[dev]
+            ));
+        }
 
-        cudaSetDevice(dev);
-        cudaStream_t stream = ctx->streams[dev];
-        cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
+        if (broadcast_type_target == -2) return;
+
+        if (barrier)
+            barrier->arrive_and_wait();
+
+        tp_cross_device_barrier(tp_context, broadcast_type, t_device);
+
+        if (broadcast_type_target == -1) return;
+
+        size_t size = targets[0].numel() * 2;
+
+        switch(broadcast_type_target)
+        {
+            case BROADCAST_KV: split = ctx->kv_split; break;
+            case BROADCAST_ID: split = ctx->id_split; break;
+            case BROADCAST_VC: split = ctx->vc_split; break;
+            case BROADCAST_RS: split = ctx->rs_split; break;
+            case BROADCAST_Q: split = ctx->q_split; break;
+        }
+
+        for (int i = 0; i < split.size(); ++i)
+        {
+            int dev = std::get<0>(split[i]);
+            if (t_device != -1 && t_device != dev) continue;
+
+            void* target = (void*) targets[i].data_ptr();
+
+            cudaSetDevice(dev);
+            cudaStream_t stream = ctx->streams[dev];
+            cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
+        }
     }
 }
 
@@ -414,28 +472,85 @@ void tp_all_reduce
     size_t size = tensors[0].numel() * tensors[0].element_size();
     size_t num = tensors.size();
 
-    // Reduction via host buffer
-
-    for (int i = 0; i < num; ++i)
+    // If P2P is enabled and available, use NCCL AllReduce
+    if (ctx->enable_p2p && ctx->can_p2p && ctx->all_devices.size() > 1) {
+        ncclGroupStart();
+        for (int i = 0; i < num; ++i) {
+            int dev = tensors[i].device().index();
+            int comms_i = ctx->comms_index[dev];
+            ncclAllReduce(tensors[i].data_ptr(), residuals[i].data_ptr(), tensors[i].numel(), ncclFloat16, ncclSum, ctx->comms[comms_i], ctx->streams[dev]);
+        }
+        ncclGroupEnd();
+    }
+    else // Fallback to CPU bounce
     {
-        int dev = tensors[i].device().index();
-        auto torch_stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
-        cudaSetDevice(dev);
-        at::cuda::setCurrentCUDAStream(torch_stream);
-
-        if (i > 0)
+        for (int i = 0; i < num; ++i)
         {
-            int prev_dev = tensors[i - 1].device().index();
+            int dev = tensors[i].device().index();
+            auto torch_stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
+            cudaSetDevice(dev);
+            at::cuda::setCurrentCUDAStream(torch_stream);
 
-            // Copy host buffer to current residual
+            if (i > 0)
+            {
+                int prev_dev = tensors[i - 1].device().index();
+
+                // Copy host buffer to current residual
+
+                cuda_check(cudaStreamWaitEvent
+                (
+                    ctx->streams[dev],
+                    ctx->sync_events[prev_dev],
+                    0
+                ));
+
+                cuda_check(cudaMemcpyAsync
+                (
+                    residuals[i].data_ptr(),
+                    ctx->pinned_temp[buffer],
+                    size,
+                    cudaMemcpyHostToDevice,
+                    ctx->streams[dev]
+                ));
+            }
+
+            // Add current tensor to current residual
+
+            residuals[i].add_(tensors[i]);
+
+            // Copy current residual to host buffer
+
+            cuda_check(cudaMemcpyAsync
+            (
+                ctx->pinned_temp[buffer],
+                residuals[i].data_ptr(),
+                size,
+                cudaMemcpyDeviceToHost,
+                ctx->streams[dev]
+            ));
+
+            cuda_check(cudaEventRecord
+            (
+                ctx->sync_events[dev],
+                ctx->streams[dev]
+            ));
+        }
+
+        // Broadcast result
+
+        int last_dev = tensors[num - 1].device().index();
+
+        for (int i = 0; i < num - 1; ++i)
+        {
+            int dev = tensors[i].device().index();
+            cudaSetDevice(dev);
 
             cuda_check(cudaStreamWaitEvent
             (
                 ctx->streams[dev],
-                ctx->sync_events[prev_dev],
+                ctx->sync_events[last_dev],
                 0
             ));
-
             cuda_check(cudaMemcpyAsync
             (
                 residuals[i].data_ptr(),
@@ -445,51 +560,5 @@ void tp_all_reduce
                 ctx->streams[dev]
             ));
         }
-
-        // Add current tensor to current residual
-
-        residuals[i].add_(tensors[i]);
-
-        // Copy current residual to host buffer
-
-        cuda_check(cudaMemcpyAsync
-        (
-            ctx->pinned_temp[buffer],
-            residuals[i].data_ptr(),
-            size,
-            cudaMemcpyDeviceToHost,
-            ctx->streams[dev]
-        ));
-
-        cuda_check(cudaEventRecord
-        (
-            ctx->sync_events[dev],
-            ctx->streams[dev]
-        ));
-    }
-
-    // Broadcast result
-
-    int last_dev = tensors[num - 1].device().index();
-
-    for (int i = 0; i < num - 1; ++i)
-    {
-        int dev = tensors[i].device().index();
-        cudaSetDevice(dev);
-
-        cuda_check(cudaStreamWaitEvent
-        (
-            ctx->streams[dev],
-            ctx->sync_events[last_dev],
-            0
-        ));
-        cuda_check(cudaMemcpyAsync
-        (
-            residuals[i].data_ptr(),
-            ctx->pinned_temp[buffer],
-            size,
-            cudaMemcpyHostToDevice,
-            ctx->streams[dev]
-        ));
     }
 }

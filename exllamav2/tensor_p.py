@@ -51,7 +51,8 @@ class TPContext:
         model: ExLlamaV2,
         gpu_split: list[float] | None,
         expect_cache_tokens: int = 0,
-        expect_cache_base: type = None
+        expect_cache_base: type = None,
+        enable_p2p: bool = False
     ):
         self.model = model
         cfg = self.model.config
@@ -80,6 +81,8 @@ class TPContext:
 
         self.sin = None
         self.cos = None
+
+        self.enable_p2p = enable_p2p
 
         self.define_split(gpu_split, expect_cache_tokens, expect_cache_base)
 
@@ -178,8 +181,7 @@ class TPContext:
         self.all_devs = self.all_devices()
         self.device = self.all_devs[0]
         self.num_devices = max(self.all_devs) + 1
-
-
+        
     def finalize(self):
         cfg = self.model.config
 
@@ -205,9 +207,9 @@ class TPContext:
             self.rs_split,
             self.q_split,
             self.pinned_temp,
-            self.streams
+            self.streams,
+            self.enable_p2p
         )
-
 
     def get_split(self, broadcast_type: int):
 

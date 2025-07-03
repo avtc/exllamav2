@@ -71,6 +71,7 @@ class ExLlamaV2Config:
     no_sdpa: bool                               # Do not use Torch SDPA even if causal_lower_right bias is available (seems to be unreliable on ROCm (?))
     load_in_q4: bool                            # Load float linear layers in Q4 format (for test/dev purposes, not performant)
     no_graphs: bool                             # Do not use CUDA graphs
+    enable_p2p: bool                            # Enable direct P2P communication between GPUs (requires NVLink or compatible hardware)
 
     max_dq_size: int                            # Max number of elements to dequantize at once
 
@@ -182,10 +183,10 @@ class ExLlamaV2Config:
         self.alt_rope_method = None
 
         self.no_flash_attn = 'EXLLAMA_NO_FLASH_ATTN' in os.environ
-        self.no_xformers = 'EXLLAMA_NO_XFORMERS' in os.environ
         self.no_sdpa = 'EXLLAMA_NO_SDPA' in os.environ
         self.load_in_q4 = False
         self.no_graphs = 'EXLLAMA_NO_GRAPHS' in os.environ
+        self.enable_p2p = 'EXLLAMA_ENABLE_P2P' in os.environ
 
         if model_dir is not None:
             self.model_dir = model_dir

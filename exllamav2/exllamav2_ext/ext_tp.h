@@ -33,8 +33,11 @@ public:
     void* mapped_globals;
 
     std::vector<cudaEvent_t> sync_events;
-//    std::vector<ncclComm_t> comms;
-//    std::vector<int> comms_index;
+    std::vector<ncclComm_t> comms;
+    std::vector<int> comms_index;
+
+    bool enable_p2p;
+    bool can_p2p;
 
     ExtTPContext
     (
@@ -44,7 +47,8 @@ public:
         std::vector<std::tuple<int, int, int>> _rs_split,
         std::vector<std::tuple<int, int, int>> _q_split,
         std::vector<torch::Tensor> _pinned_temp,
-        std::vector<cudaStream_t> _streams
+        std::vector<cudaStream_t> _streams,
+        bool _enable_p2p
     );
     ~ExtTPContext();
 };
@@ -57,7 +61,8 @@ uintptr_t make_tp_context
     const std::vector<std::tuple<int, int, int>> rs_split,
     const std::vector<std::tuple<int, int, int>> q_split,
     std::vector<torch::Tensor> pinned_temp,
-    std::vector<uintptr_t> streams
+    std::vector<uintptr_t> streams,
+    bool enable_p2p
 );
 
 void free_tp_context(uintptr_t ctx);
