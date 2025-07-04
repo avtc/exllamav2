@@ -458,8 +458,10 @@ class TPContext:
         from exllamav2.model import ExLlamaV2
         from exllamav2.config import ExLlamaV2Config
         
-        # Create dummy config with minimal required attributes
+        # Create dummy config with all required attributes
         config = ExLlamaV2Config()
+        
+        # Basic config
         config.num_key_value_heads = 4
         config.num_key_value_groups = 1
         config.intermediate_size = 1024
@@ -469,7 +471,12 @@ class TPContext:
         config.max_batch_size = 1
         config.max_input_len = 2048
         config.max_output_len = 2048
-        # Assume TP is supported
+        
+        # Architecture config
+        class ArchConfig:
+            class LM:
+                supports_tp = True
+        config.arch = ArchConfig()
         
         # Create dummy model
         model = ExLlamaV2(config)
