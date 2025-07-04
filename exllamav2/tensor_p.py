@@ -474,7 +474,7 @@ class TPContext:
         
         # Architecture config
         class ArchConfig:
-            class LM:
+            class lm:
                 supports_tp = True
         config.arch = ArchConfig()
         
