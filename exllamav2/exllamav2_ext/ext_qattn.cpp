@@ -696,11 +696,6 @@ void tp_attn_forward_
                     true,  // rotary_interleaved
                     0  // num_splits
                 );
-                // Explicitly clear tensor objects to force early release of resources
-                q = torch::Tensor();
-                k = torch::Tensor();
-                v = torch::Tensor();
-                o = torch::Tensor();
             }
 
         }
@@ -746,12 +741,6 @@ void tp_attn_forward_
         tp_gather_barrier(tp_context, 0, temp_o, BROADCAST_Q, temp_o, -1, head_dim, t_device, sync);
 
         fprintf(stderr, "[QATTN] End run_thread\n");
-
-        #ifdef TP_MULTITHREADED
-            // Attempt to clear CUDA cache after each thread's run to help with OOM
-            pybind11::gil_scoped_acquire acquire_end;
-            torch::cuda::empty_cache();
-        #endif
     };
 
     #ifdef TP_MULTITHREADED
