@@ -54,8 +54,12 @@ ExtTPContext::ExtTPContext
     for (int i = 0; i < streams.size(); ++i)
         if (streams[i] && i > max_dev) max_dev = i;
 
-    for (int i = 0; i < streams.size(); ++i)
-        if (streams[i]) all_devices.push_back(i);
+    for (int i = 0; i < streams.size(); ++i) {
+        if (streams[i]) {
+            all_devices.push_back(i);
+            device_streams[i] = streams[i]; // Populate device_streams
+        }
+    }
 
     sync_events.resize(max_dev + 1);
 
@@ -105,7 +109,9 @@ ExtTPContext::ExtTPContext
         for (auto d : all_devices) fprintf(stderr, "%d ", d);
         fprintf(stderr, "\n");
         comms.resize(all_devices.size());
+        fprintf(stderr, "[TP] NCCL: Calling ncclCommInitAll for %zu devices.\n", all_devices.size());
         ncclCommInitAll(&comms[0], all_devices.size(), &all_devices[0]);
+        fprintf(stderr, "[TP] NCCL: ncclCommInitAll completed.\n");
         comms_index.clear();
         for (int i = 0; i < all_devices.size(); ++i) {
             comms_index[all_devices[i]] = i;
