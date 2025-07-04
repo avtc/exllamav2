@@ -445,8 +445,70 @@ class TPContext:
 
 
     def reserve_scratch(self, scratch: list[int]):
-
         for dev, s in enumerate(scratch):
             if s == 0: continue
             devctx = self.model.get_device_context(dev)
             devctx.get_scratch_slice(s)
+
+
+    @staticmethod
+    def test_gather_ops():
+        """Test gather operations with both NCCL and CPU-bounce paths"""
+        import torch
+        from exllamav2.model import ExLlamaV2
+        from exllamav2.config import ExLlamaV2Config
+        
+        # Create dummy config
+        config = ExLlamaV2Config()
+        config.num_key_value_heads = 4
+        config.num_key_value_groups = 1
+        config.intermediate_size = 1024
+        config.hidden_size = 1024
+        config.vocab_size = 32000
+        config.max_seq_len = 2048
+        config.max_batch_size = 1
+        config.arch.lm.supports_tp = True
+        
+        # Create dummy model
+        model = ExLlamaV2(config)
+        
+        # Test with P2P enabled
+        print("Testing with P2P enabled...")
+        tp_ctx_p2p = TPContext(model, gpu_split=[1.0, 1.0], enable_p2p=True)
+        tp_ctx_p2p.finalize()
+        
+        # Create test tensors
+        batch_size = 2
+        dim = 128
+        inputs_p2p = [
+            torch.randn((batch_size, dim), dtype=torch.float16, device=f"cuda:{i}")
+            for i in range(2)
+        ]
+        
+        # Test gather operation with P2P
+        gathered_p2p = tp_ctx_p2p.gather(0, inputs_p2p, BROADCAST_KV, dim)
+        print("P2P gather operation completed successfully")
+        print("Gathered tensor shape:", gathered_p2p.shape)
+        
+        # Clean up
+        tp_ctx_p2p.unload()
+        
+        # Test with P2P disabled (CPU-bounce)
+        print("\nTesting with P2P disabled (CPU-bounce)...")
+        tp_ctx_cpu = TPContext(model, gpu_split=[1.0, 1.0], enable_p2p=False)
+        tp_ctx_cpu.finalize()
+        
+        # Create test tensors
+        inputs_cpu = [
+            torch.randn((batch_size, dim), dtype=torch.float16, device=f"cuda:{i}")
+            for i in range(2)
+        ]
+        
+        # Test gather operation with CPU-bounce
+        gathered_cpu = tp_ctx_cpu.gather(0, inputs_cpu, BROADCAST_KV, dim)
+        print("CPU-bounce gather operation completed successfully")
+        print("Gathered tensor shape:", gathered_cpu.shape)
+        
+        # Clean up
+        tp_ctx_cpu.unload()
+
