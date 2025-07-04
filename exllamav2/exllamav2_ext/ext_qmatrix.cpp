@@ -259,30 +259,27 @@ void gemm_half_q_half_tp
     ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);
 
     QMatrix* qm = reinterpret_cast<QMatrix*> (b[t_device]);
+
     int prev_cuda_device;
     cudaGetDevice(&prev_cuda_device);
-    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Prev CUDA device: %d\n", prev_cuda_device);
-    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Iteration %d, qm->device = %d\n", t_device, qm->device);
-    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: a[%d] device = %d, c[%d] device = %d\n", t_device, a[t_device].device().index(), t_device, c[t_device].device().index());
-    // if (t_device != -1 && t_device != dev) continue;
+    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Before guard - Prev CUDA device: %d\n", prev_cuda_device);
+    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Before guard - Iteration %d, qm->device = %d\n", t_device, qm->device);
+    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Before guard - a[%d] device = %d, c[%d] device = %d\n", t_device, a[t_device].device().index(), t_device, c[t_device].device().index());
+
+    const at::cuda::OptionalCUDAGuard device_guard(device_of(a[t_device]));
+
+    int current_cuda_device;
+    cudaGetDevice(&current_cuda_device);
+    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: After guard - Current CUDA device: %d\n", current_cuda_device);
+    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: After guard - a[%d] device = %d, c[%d] device = %d\n", t_device, a[t_device].device().index(), t_device, c[t_device].device().index());
+
 //        TORCH_CHECK_DTYPE(a[t_device], kHalf);
 //        TORCH_CHECK_DTYPE(c[t_device], kHalf);
 //        TORCH_CHECK_SHAPES(a[t_device], 0, c[t_device], 0, 1);
 //        TORCH_CHECK(qm->height == a[t_device].size(1), "a and b have incompatible shapes")
 //        TORCH_CHECK(qm->width == c[t_device].size(1), "b and c have incompatible shapes")
 
-    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Attempting cudaSetDevice(%d).\n", t_device);
-    cudaSetDevice(t_device);
-    cudaDeviceSynchronize(); // Add synchronization
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Error after cudaSetDevice: %s\n", cudaGetErrorString(err));
-
     cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
-    int current_cuda_device;
-    cudaGetDevice(&current_cuda_device);
-    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Current CUDA device after cudaSetDevice: %d\n", current_cuda_device);
-    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: a[t_device].device().index() = %d\n", a[t_device].device().index());
-    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: c[t_device].device().index() = %d\n", c[t_device].device().index());
 
     fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Calling gemm_half_q_half_cuda...\n");
     gemm_half_q_half_cuda
@@ -300,7 +297,7 @@ void gemm_half_q_half_tp
         force_cuda
     );
     cudaDeviceSynchronize(); // Add synchronization
-    err = cudaGetLastError();
+    cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Error after gemm_half_q_half_cuda: %s\n", cudaGetErrorString(err));
     fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: gemm_half_q_half_cuda returned.\n");
 }
