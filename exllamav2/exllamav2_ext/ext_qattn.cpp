@@ -556,6 +556,15 @@ void tp_attn_forward_
             at::InferenceMode guard(true);
         #endif
 
+        fprintf(stderr, "[QATTN] tp_attn_forward_ called. tp_context=%p\n", (void*)tp_context);
+        fprintf(stderr, "[QATTN] all_devices: ");
+        for (auto d : ctx->all_devices) fprintf(stderr, "%d ", d);
+        fprintf(stderr, "\n");
+        fprintf(stderr, "[QATTN] temp_bc0 size: %zu\n", temp_bc0.size());
+        fprintf(stderr, "[QATTN] temp_q size: %zu\n", temp_q.size());
+        fprintf(stderr, "[QATTN] pre_layernorm size: %zu\n", pre_layernorm.size());
+        fprintf(stderr, "[QATTN] Begin run_thread\n");
+
         // Broadcast
 
         tp_broadcast(tp_context, 0, hidden_states, BROADCAST_Q, temp_bc0, head_dim, t_device);
@@ -568,6 +577,7 @@ void tp_attn_forward_
             if (t_device != -1 && t_device != dev) continue;
 
             cudaSetDevice(dev);
+            fprintf(stderr, "[QATTN] Layernorm on device %d\n", dev);
             rms_norm_cuda
             (
                 ctx->streams[dev],
@@ -585,6 +595,7 @@ void tp_attn_forward_
 
         // Q, K, V
 
+        fprintf(stderr, "[QATTN] GEMM Q/K/V\n");
         gemm_half_q_half_tp(temp_bc1, q_proj, temp_q, false, tp_context, t_device);
         gemm_half_q_half_tp(temp_bc1, k_proj, temp_k, false, tp_context, t_device);
         gemm_half_q_half_tp(temp_bc1, v_proj, temp_v, false, tp_context, t_device);
@@ -598,6 +609,7 @@ void tp_attn_forward_
                 int dev = temp_q[i].device().index();
                 if (t_device != -1 && t_device != dev) continue;
                 cudaSetDevice(dev);
+                fprintf(stderr, "[QATTN] RoPE on device %d\n", dev);
 
                 int num_heads = temp_q[i].size(1) / head_dim;
                 int num_kv_heads = temp_k[i].size(1) / head_dim;
@@ -631,6 +643,7 @@ void tp_attn_forward_
             int dev = temp_q[i].device().index();
             if (t_device != -1 && t_device != dev) continue;
             cudaSetDevice(dev);
+            fprintf(stderr, "[QATTN] Attn on device %d\n", dev);
 
             auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
             at::cuda::setCurrentCUDAStream(stream);
@@ -679,10 +692,12 @@ void tp_attn_forward_
 
         // Allgather
 
+        fprintf(stderr, "[QATTN] Allgather\n");
         tp_gather_barrier(tp_context, 1, temp_o, BROADCAST_Q, temp_bc2, BROADCAST_Q, head_dim, t_device, sync);
 
         // Output projection
 
+        fprintf(stderr, "[QATTN] Output projection\n");
         gemm_half_q_half_tp(temp_bc2, o_proj, temp_o, false, tp_context, t_device);
 
         // Add residual
@@ -712,8 +727,10 @@ void tp_attn_forward_
 
         // Gather
 
+        fprintf(stderr, "[QATTN] Gather\n");
         tp_gather_barrier(tp_context, 0, temp_o, BROADCAST_Q, temp_o, -1, head_dim, t_device, sync);
 
+        fprintf(stderr, "[QATTN] End run_thread\n");
     };
 
     #ifdef TP_MULTITHREADED

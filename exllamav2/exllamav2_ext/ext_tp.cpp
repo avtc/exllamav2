@@ -101,13 +101,23 @@ ExtTPContext::ExtTPContext
     fprintf(stderr, "TP Debug: can_p2p (final) = %d\n", (int)can_p2p);
 
     if (enable_p2p && can_p2p) {
-        // NCCL initialization
+        fprintf(stderr, "[TP] NCCL: Initializing comms for devices: ");
+        for (auto d : all_devices) fprintf(stderr, "%d ", d);
+        fprintf(stderr, "\n");
         comms.resize(all_devices.size());
         ncclCommInitAll(&comms[0], all_devices.size(), &all_devices[0]);
         comms_index.clear();
-        for (int i = 0; i < all_devices.size(); ++i)
+        for (int i = 0; i < all_devices.size(); ++i) {
             comms_index[all_devices[i]] = i;
+            fprintf(stderr, "[TP] comms_index[%d]=%d comms[%d]=%p\n", all_devices[i], i, i, (void*)comms[i]);
+        }
     }
+
+    fprintf(stderr, "[TP] NCCL/P2P: all_devices: ");
+    for (auto d : all_devices) fprintf(stderr, "%d ", d);
+    fprintf(stderr, "\n");
+    for (auto& kv : device_streams) fprintf(stderr, "[TP] device_streams[%d]=%p\n", kv.first, (void*)kv.second);
+    fprintf(stderr, "[TP] sync_events size: %zu\n", sync_events.size());
 }
 
 ExtTPContext::~ExtTPContext()
