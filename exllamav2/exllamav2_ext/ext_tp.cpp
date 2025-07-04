@@ -70,6 +70,7 @@ ExtTPContext::ExtTPContext
     cudaHostAlloc((void**)&tp_data, sizeof(ExtTPData), cudaHostAllocMapped);
     init_tp_data(tp_data);
 
+    fprintf(stderr, "TP Debug: enable_p2p (initial) = %d\n", (int)enable_p2p);
     can_p2p = false;
     if (enable_p2p) {
         // Check P2P capabilities
@@ -92,6 +93,7 @@ ExtTPContext::ExtTPContext
             can_p2p = false; // No P2P needed for single device
         }
     }
+    fprintf(stderr, "TP Debug: can_p2p (final) = %d\n", (int)can_p2p);
 
     if (enable_p2p && can_p2p) {
         // NCCL initialization
