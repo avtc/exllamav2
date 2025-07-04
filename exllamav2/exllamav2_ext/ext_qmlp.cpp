@@ -376,7 +376,7 @@ void tp_mlp_forward_
             int dev = temp_bc0[i].device().index();
             if (t_device != -1 && t_device != dev) continue;
 
-            cudaSetDevice(dev);
+            const at::cuda::OptionalCUDAGuard device_guard(dev); // Use guard
             rms_norm_cuda
             (
                 ctx->streams[dev],
@@ -404,7 +404,7 @@ void tp_mlp_forward_
             int dev = temp_bc1[i].device().index();
             if (t_device != -1 && t_device != dev) continue;
 
-            cudaSetDevice(dev);
+            const at::cuda::OptionalCUDAGuard device_guard(dev); // Use guard
             act_mul_cuda
             (
                 ctx->streams[dev],
@@ -434,7 +434,7 @@ void tp_mlp_forward_
             for (int i = 0; i < temp_bc0.size(); ++i)
             {
                 int dev = temp_bc0[i].device().index();
-                cudaSetDevice(dev);
+                const at::cuda::OptionalCUDAGuard device_guard(dev); // Use guard
 
                 auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
                 at::cuda::setCurrentCUDAStream(stream);

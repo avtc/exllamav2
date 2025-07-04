@@ -75,7 +75,7 @@ void rms_norm_tp
         int dev = x[i].device().index();
 //        DBGI(dev);
 //        DBGI(ctx->streams[dev]);
-        cudaSetDevice(dev);
+        const at::cuda::OptionalCUDAGuard device_guard(dev); // Use guard
         rms_norm_cuda
         (
             ctx->streams[dev],

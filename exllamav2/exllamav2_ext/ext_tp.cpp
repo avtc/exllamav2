@@ -65,7 +65,7 @@ ExtTPContext::ExtTPContext
 
     for (int dev : all_devices)
     {
-        cudaSetDevice(dev);
+        const at::cuda::OptionalCUDAGuard device_guard(dev); // Use guard
         cuda_check(cudaEventCreateWithFlags(&sync_events[dev], cudaEventDisableTiming));
     }
 
@@ -88,7 +88,7 @@ ExtTPContext::ExtTPContext
             for (int i = 0; i < all_devices.size(); ++i) {
                 for (int j = i + 1; j < all_devices.size(); ++j) {
                     int canAccess;
-                    cudaSetDevice(all_devices[i]);
+                    const at::cuda::OptionalCUDAGuard device_guard(all_devices[i]); // Use guard
                     cuda_check(cudaDeviceCanAccessPeer(&canAccess, all_devices[i], all_devices[j]));
                     if (canAccess == 0) {
                         can_p2p = false;
@@ -199,7 +199,7 @@ void tp_broadcast
     // If P2P is enabled and available, use NCCL broadcast
     if (ctx->enable_p2p && ctx->can_p2p && ctx->all_devices.size() > 1) {
         int src_dev = source.device().index();
-        cudaSetDevice(src_dev);
+        const at::cuda::OptionalCUDAGuard device_guard(src_dev); // Use guard
         cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
         ncclGroupStart();
@@ -218,7 +218,7 @@ void tp_broadcast
 
         if (src_dev >= 0)
         {
-            cudaSetDevice(src_dev);
+            const at::cuda::OptionalCUDAGuard device_guard_src(src_dev); // Use guard
             cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
             source_g = (void*) source.data_ptr();
@@ -243,7 +243,7 @@ void tp_broadcast
             void* target = (void*) targets[i].data_ptr();
             if (target == source_g) continue;
 
-            cudaSetDevice(dev);
+            const at::cuda::OptionalCUDAGuard device_guard_target(dev); // Use guard
             cudaStream_t stream = ctx->device_streams.at(dev);
             cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
         }
@@ -328,7 +328,7 @@ void tp_gather_barrier
             int src_cols = inputs[i].size(1);
             uint8_t* dst = ((uint8_t*) ctx->pinned_temp[buffer]) + std::get<1>(split[i]) * esize * dim;
 
-            cudaSetDevice(dev);
+            const at::cuda::OptionalCUDAGuard device_guard_src(dev); // Use guard
             cuda_check(cudaMemcpy2DAsync
             (
                 dst,
@@ -369,7 +369,7 @@ void tp_gather_barrier
 
             void* target = (void*) targets[i].data_ptr();
 
-            cudaSetDevice(dev);
+            const at::cuda::OptionalCUDAGuard device_guard_target(dev); // Use guard
             cudaStream_t stream = ctx->device_streams.at(dev);
             cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
         }
@@ -407,60 +407,42 @@ void tp_cross_device_barrier
     uint32_t* sync = ctx->tp_data->sync[stage];
     uint32_t* sync_next = ctx->tp_data->sync[next_stage];
 
-//    for (int i = 0; i < ctx->all_devices.size(); ++i)
-//    {
-//        int dev = ctx->all_devices[i];
-//        // if (t_device != -1 && t_device != dev) continue;
-//        cross_device_barrier_cuda
-//        (
-//            ctx->streams[dev],
-//            sync,
-//            sync_next,
-//            ctx->all_devices.size(),
-//            i
-//        );
-//    }
+    for (int i = 0; i < ctx->all_devices.size(); ++i)
+    {
+        int dev = ctx->all_devices[i];
+        const at::cuda::OptionalCUDAGuard device_guard(dev); // Use guard
+        // if (t_device != -1 && t_device != dev) continue;
+        cross_device_barrier_cuda
+        (
+            ctx->streams[dev],
+            sync,
+            sync_next,
+            ctx->all_devices.size(),
+            i
+        );
+    }
 
-//    for (int i = 0; i < ctx->all_devices.size(); ++i)
-//    {
-//        int dev = ctx->all_devices[i];
-//        cudaSetDevice(dev);
-//        // if (t_device != -1 && t_device != dev) continue;
-//        cudaStreamSynchronize(ctx->streams[dev]);
-//    }
+    for (int i = 0; i < ctx->all_devices.size(); ++i)
+    {
+        int dev = ctx->all_devices[i];
+        const at::cuda::OptionalCUDAGuard device_guard(dev); // Use guard
+        // if (t_device != -1 && t_device != dev) continue;
+        cudaStreamSynchronize(ctx->streams[dev]);
+    }
 
     #ifdef TP_MULTITHREADED
-        cudaSetDevice(t_device);
+        const at::cuda::OptionalCUDAGuard device_guard(t_device); // Use guard
     #endif
 
-    // for (int i = 0; i < ctx->all_devices.size(); ++i)
-    // {
-    //     int dev_i = ctx->all_devices[i];
-    //     cudaSetDevice(dev_i);
-    //     cuda_check(cudaEventRecord(ctx->sync_events[dev_i], ctx->device_streams.at(dev_i)));
-    // }
-
-    // for (int i = 0; i < ctx->all_devices.size(); ++i)
-    // {
-    //     for (int j = 0; j < ctx->all_devices.size(); ++j)
-    //     {
-    //         if (i == j) continue;
-    //         int dev_i = ctx->all_devices[i];
-    //         int dev_j = ctx->all_devices[j];
-    //         cudaSetDevice(dev_i);
-    //         cuda_check(cudaStreamWaitEvent(ctx->device_streams.at(dev_i), ctx->sync_events[dev_j], 0));
-    //     }
-    // }
-
     for (int dev_i : ctx->all_devices) {
-        cudaSetDevice(dev_i);
+        const at::cuda::OptionalCUDAGuard device_guard(dev_i); // Use guard
         cuda_check(cudaEventRecord(ctx->sync_events[dev_i], ctx->device_streams.at(dev_i)));
     }
 
-    for (int dev_i : ctx->all_devices) {
-        for (int dev_j : ctx->all_devices) {
+    for (int dev_j : ctx->all_devices) {
+        for (int dev_i : ctx->all_devices) {
             if (dev_i == dev_j) continue;
-            cudaSetDevice(dev_i);
+            const at::cuda::OptionalCUDAGuard device_guard(dev_i); // Use guard
             cuda_check(cudaStreamWaitEvent(ctx->device_streams.at(dev_i), ctx->sync_events[dev_j], 0));
         }
     }
@@ -530,8 +512,8 @@ void tp_all_reduce
         for (int i = 0; i < num; ++i)
         {
             int dev = tensors[i].device().index();
+            const at::cuda::OptionalCUDAGuard device_guard(dev); // Use guard
             auto torch_stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
-            cudaSetDevice(dev);
             at::cuda::setCurrentCUDAStream(torch_stream);
 
             if (i > 0)
@@ -586,7 +568,7 @@ void tp_all_reduce
         for (int i = 0; i < num - 1; ++i)
         {
             int dev = tensors[i].device().index();
-            cudaSetDevice(dev);
+            const at::cuda::OptionalCUDAGuard device_guard(dev); // Use guard
 
             cuda_check(cudaStreamWaitEvent
             (

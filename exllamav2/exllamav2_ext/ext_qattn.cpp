@@ -330,7 +330,7 @@ void tp_attn_forward_paged_
             int dev = temp_bc0[i].device().index();
             if (t_device != -1 && t_device != dev) continue;
 
-            cudaSetDevice(dev);
+            const at::cuda::OptionalCUDAGuard device_guard(dev); // Use guard
             rms_norm_cuda
             (
                 ctx->streams[dev],
@@ -360,7 +360,7 @@ void tp_attn_forward_paged_
             {
                 int dev = temp_q[i].device().index();
                 if (t_device != -1 && t_device != dev) continue;
-                cudaSetDevice(dev);
+                const at::cuda::OptionalCUDAGuard device_guard(dev); // Use guard
 
                 int num_heads = temp_q[i].size(1) / head_dim;
                 int num_kv_heads = temp_k[i].size(1) / head_dim;
@@ -393,7 +393,7 @@ void tp_attn_forward_paged_
         {
             int dev = temp_q[i].device().index();
             if (t_device != -1 && t_device != dev) continue;
-            cudaSetDevice(dev);
+            const at::cuda::OptionalCUDAGuard device_guard(dev); // Use guard
 
             auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
             at::cuda::setCurrentCUDAStream(stream);
@@ -458,7 +458,7 @@ void tp_attn_forward_paged_
             for (int i = 0; i < temp_bc0.size(); ++i)
             {
                 int dev = temp_bc0[i].device().index();
-                cudaSetDevice(dev);
+                const at::cuda::OptionalCUDAGuard device_guard(dev); // Use guard
 
                 auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
                 at::cuda::setCurrentCUDAStream(stream);

@@ -34,7 +34,7 @@ void stloader_read
         load_buffer = (uint8_t*) malloc(size);
         TORCH_CHECK(load_buffer, "Can't allocate buffer for tensor");
         cuda_buffer = (uint8_t*) target.data_ptr();
-        cudaSetDevice(device.value().index());
+        const at::cuda::OptionalCUDAGuard device_guard(device.value().index()); // Use guard
         stream = at::cuda::getCurrentCUDAStream(device.value().index()).stream();
     }
 
@@ -93,7 +93,7 @@ void stloader_read
 
     auto copy_worker = [&] ()
     {
-        cudaSetDevice(device.value().index());
+        const at::cuda::OptionalCUDAGuard device_guard(device.value().index()); // Use guard
 
         size_t total_blocks = DIVIDE(size, STLOADER_BLOCK_SIZE);
         while (total_blocks && !load_failed)
