@@ -49,16 +49,20 @@ ExtTPContext::ExtTPContext
         pinned_size = pt.numel() * pt.element_size();
     }
 
+    // Find max device index
+    int max_dev = -1;
+    for (int i = 0; i < streams.size(); ++i)
+        if (streams[i] && i > max_dev) max_dev = i;
+
     for (int i = 0; i < streams.size(); ++i)
         if (streams[i]) all_devices.push_back(i);
 
-    sync_events.resize(streams.size());
+    sync_events.resize(max_dev + 1);
 
-    for (int i = 0; i < streams.size(); ++i)
+    for (int dev : all_devices)
     {
-        if (!streams[i]) continue;
-        cudaSetDevice(i);
-        cuda_check(cudaEventCreateWithFlags(&sync_events[i], cudaEventDisableTiming));
+        cudaSetDevice(dev);
+        cuda_check(cudaEventCreateWithFlags(&sync_events[dev], cudaEventDisableTiming));
     }
 
     #ifdef TP_MULTITHREADED
