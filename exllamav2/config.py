@@ -187,7 +187,7 @@ class ExLlamaV2Config:
         self.no_sdpa = 'EXLLAMA_NO_SDPA' in os.environ
         self.load_in_q4 = False
         self.no_graphs = 'EXLLAMA_NO_GRAPHS' in os.environ
-        self.enable_p2p = 'EXLLAMA_ENABLE_P2P' in os.environ
+        self.enable_p2p = os.getenv('EXLLAMA_ENABLE_P2P') == '1'
 
         if model_dir is not None:
             self.model_dir = model_dir
