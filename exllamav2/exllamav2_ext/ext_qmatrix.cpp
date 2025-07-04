@@ -271,8 +271,16 @@ void gemm_half_q_half_tp
 
     // cudaSetDevice(t_device);
     fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: cudaSetDevice(%d) called.\n", t_device);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Error after cudaSetDevice: %s\n", cudaGetErrorString(err));
+
     cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
-    
+    int current_cublas_device;
+    cublasGetDevice(cublas_handle, &current_cublas_device);
+    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: CUBLAS handle device: %d\n", current_cublas_device);
+    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: a[t_device].device().index() = %d\n", a[t_device].device().index());
+    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: c[t_device].device().index() = %d\n", c[t_device].device().index());
+
     fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Calling gemm_half_q_half_cuda...\n");
     gemm_half_q_half_cuda
     (
@@ -288,6 +296,8 @@ void gemm_half_q_half_tp
         NULL,
         force_cuda
     );
+    err = cudaGetLastError();
+    if (err != cudaSuccess) fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Error after gemm_half_q_half_cuda: %s\n", cudaGetErrorString(err));
     fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: gemm_half_q_half_cuda returned.\n");
 }
 
