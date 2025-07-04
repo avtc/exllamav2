@@ -48,13 +48,30 @@ ExtTPContext::ExtTPContext
         pinned_size = pt.numel() * pt.element_size();
     }
 
-    for (int i = 0; i < streams.size(); ++i)
-        if (streams[i]) all_devices.push_back(i);
+    int num_cuda_devices;
+    cudaGetDeviceCount(&num_cuda_devices);
+    fprintf(stderr, "TP Debug: CUDA device count = %d\n", num_cuda_devices);
 
-    sync_events.resize(streams.size());
+    for (int i = 0; i < streams.size(); ++i) {
+        if (streams[i]) {
+            all_devices.push_back(i);
+        }
+    }
 
-    for (int dev_idx : all_devices)
-    {
+    fprintf(stderr, "TP Debug: all_devices (from streams) = [");
+    for (size_t i = 0; i < all_devices.size(); ++i) {
+        fprintf(stderr, "%d%s", all_devices[i], (i == all_devices.size() - 1 ? "" : ", "));
+    }
+    fprintf(stderr, "]\n");
+
+    sync_events.resize(num_cuda_devices); // Resize to actual number of CUDA devices
+
+    for (int dev_idx : all_devices) {
+        if (dev_idx >= num_cuda_devices) {
+            fprintf(stderr, "TP Error: Attempting to set invalid device ordinal %d. Max device ordinal is %d.\n", dev_idx, num_cuda_devices - 1);
+            // Potentially throw an exception here or handle gracefully
+            // For now, let it proceed to observe the original error or a new one
+        }
         cudaSetDevice(dev_idx);
         cuda_check(cudaEventCreateWithFlags(&sync_events[dev_idx], cudaEventDisableTiming));
     }
