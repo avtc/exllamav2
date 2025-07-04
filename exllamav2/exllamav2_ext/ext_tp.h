@@ -34,7 +34,7 @@ public:
 
     std::vector<cudaEvent_t> sync_events;
     std::vector<ncclComm_t> comms;
-    std::vector<int> comms_index;
+    std::unordered_map<int, int> comms_index;
 
     bool enable_p2p;
     bool can_p2p;
