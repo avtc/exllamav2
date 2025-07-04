@@ -117,6 +117,12 @@ class TPContext:
                 gpu_split[k] = v["free"]
         else:
             gpu_split = [gs * 1024 for gs in gpu_split]
+            actual_device_count = torch.cuda.device_count()
+            if len(gpu_split) > actual_device_count:
+                print(f"Warning: Provided gpu_split implies more devices ({len(gpu_split)}) than available ({actual_device_count}). Truncating to available devices.", file=sys.stderr)
+                gpu_split = gpu_split[:actual_device_count]
+            while len(gpu_split) < actual_device_count:
+                gpu_split.append(0)
 
         # Q and KV splits
 
