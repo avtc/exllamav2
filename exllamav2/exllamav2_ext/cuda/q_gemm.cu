@@ -34,6 +34,9 @@ void gemm_half_q_half_cuda_part
     int label
 )
 {
+    fprintf(stderr, "[QGEMM_PART] gemm_half_q_half_cuda_part: b->is_gptq = %d\n", (int)b->is_gptq);
+    fprintf(stderr, "[QGEMM_PART] gemm_half_q_half_cuda_part: QMatrix device = %d\n", b->device);
+
     if (!b->is_gptq)
     {
         int block_kn_size;
@@ -101,6 +104,15 @@ void gemm_half_q_half_cuda_part
 
         fp_gemm_half_q_half_kernel kernel = pick_gemm_half_q_half_kernel(max_m, b->kernel_p, r_weights != NULL, mul_r_weights, block_kn_size);
         if (!kernel) return;
+
+        fprintf(stderr, "[QGEMM_PART] EXL2 branch: Pointers and their devices:\n");
+        fprintf(stderr, "  cuda_q_weight: %p (dev %d)\n", (void*)b->cuda_q_weight, (b->cuda_q_weight ? at::cuda::getDeviceForPtr(b->cuda_q_weight) : -1));
+        fprintf(stderr, "  cuda_q_scale: %p (dev %d)\n", (void*)b->cuda_q_scale, (b->cuda_q_scale ? at::cuda::getDeviceForPtr(b->cuda_q_scale) : -1));
+        fprintf(stderr, "  cuda_q_scale_max: %p (dev %d)\n", (void*)b->cuda_q_scale_max, (b->cuda_q_scale_max ? at::cuda::getDeviceForPtr(b->cuda_q_scale_max) : -1));
+        fprintf(stderr, "  cuda_q_group_map: %p (dev %d)\n", (void*)b->cuda_q_group_map, (b->cuda_q_group_map ? at::cuda::getDeviceForPtr(b->cuda_q_group_map) : -1));
+        fprintf(stderr, "  cuda_q_perm: %p (dev %d)\n", (void*)b->cuda_q_perm, (b->cuda_q_perm ? at::cuda::getDeviceForPtr(b->cuda_q_perm) : -1));
+        fprintf(stderr, "  a: %p (dev %d)\n", (void*)a, (a ? at::cuda::getDeviceForPtr(a) : -1));
+        fprintf(stderr, "  c: %p (dev %d)\n", (void*)c, (c ? at::cuda::getDeviceForPtr(c) : -1));
 
         // Measurement events
 
@@ -170,6 +182,14 @@ void gemm_half_q_half_cuda_part
 
         fp_gemm_half_q_half_gptq_kernel kernel = pick_gemm_half_q_half_gptq_kernel(GPTQ_BLOCK_M_SIZE_MAX, r_weights != NULL, mul_r_weights);
         if (!kernel) return;
+
+        fprintf(stderr, "[QGEMM_PART] GPTQ branch: Pointers and their devices:\n");
+        fprintf(stderr, "  cuda_q_weight: %p (dev %d)\n", (void*)b->cuda_q_weight, (b->cuda_q_weight ? at::cuda::getDeviceForPtr(b->cuda_q_weight) : -1));
+        fprintf(stderr, "  cuda_gptq_qzeros: %p (dev %d)\n", (void*)b->cuda_gptq_qzeros, (b->cuda_gptq_qzeros ? at::cuda::getDeviceForPtr(b->cuda_gptq_qzeros) : -1));
+        fprintf(stderr, "  cuda_gptq_scales: %p (dev %d)\n", (void*)b->cuda_gptq_scales, (b->cuda_gptq_scales ? at::cuda::getDeviceForPtr(b->cuda_gptq_scales) : -1));
+        fprintf(stderr, "  cuda_q_perm: %p (dev %d)\n", (void*)b->cuda_q_perm, (b->cuda_q_perm ? at::cuda::getDeviceForPtr(b->cuda_q_perm) : -1));
+        fprintf(stderr, "  a: %p (dev %d)\n", (void*)a, (a ? at::cuda::getDeviceForPtr(a) : -1));
+        fprintf(stderr, "  c: %p (dev %d)\n", (void*)c, (c ? at::cuda::getDeviceForPtr(c) : -1));
 
 //         DBGX((uint64_t) r_weights);
 //         if (r_weights)
