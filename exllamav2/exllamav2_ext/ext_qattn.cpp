@@ -574,11 +574,14 @@ void tp_attn_forward_
         for (int i = 0; i < pre_layernorm.size(); ++i)
         {
             int dev = temp_bc0[i].device().index();
-            fprintf(stderr, "[QATTN] Layernorm: Processing tensor %d on device %d\n", i, dev);
+            fprintf(stderr, "[QATTN] Layernorm: Processing tensor %d on device %d (from temp_bc0)\n", i, dev);
             if (t_device != -1 && t_device != dev) continue;
 
-            cudaSetDevice(dev);
-            fprintf(stderr, "[QATTN] Layernorm: cudaSetDevice(%d)\n", dev);
+            const at::cuda::OptionalCUDAGuard device_guard(device_of(temp_bc0[i]));
+            int current_cuda_device;
+            cudaGetDevice(&current_cuda_device);
+            fprintf(stderr, "[QATTN] Layernorm: Current CUDA device after guard: %d\n", current_cuda_device);
+            
             rms_norm_cuda
             (
                 ctx->streams[dev],
@@ -608,10 +611,14 @@ void tp_attn_forward_
             for (int i = 0; i < temp_q.size(); ++i)
             {
                 int dev = temp_q[i].device().index();
-                fprintf(stderr, "[QATTN] RoPE: Processing tensor %d on device %d\n", i, dev);
+                fprintf(stderr, "[QATTN] RoPE: Processing tensor %d on device %d (from temp_q)\n", i, dev);
                 if (t_device != -1 && t_device != dev) continue;
-                cudaSetDevice(dev);
-                fprintf(stderr, "[QATTN] RoPE: cudaSetDevice(%d)\n", dev);
+                
+                const at::cuda::OptionalCUDAGuard device_guard(device_of(temp_q[i]));
+                int current_cuda_device;
+                cudaGetDevice(&current_cuda_device);
+                fprintf(stderr, "[QATTN] RoPE: Current CUDA device after guard: %d\n", current_cuda_device);
+
                 fprintf(stderr, "[QATTN] RoPE: Using stream for device %d (pointer: %p)\n", dev, (void*)ctx->streams[dev]);
                 fprintf(stderr, "[QATTN] RoPE: Using sin for device %d (pointer: %p, device: %d)\n", dev, (void*)sin[dev].data_ptr(), sin[dev].device().index());
                 fprintf(stderr, "[QATTN] RoPE: Using cos for device %d (pointer: %p, device: %d)\n", dev, (void*)cos[dev].data_ptr(), cos[dev].device().index());
@@ -647,10 +654,14 @@ void tp_attn_forward_
         for (int i = 0; i < temp_q.size(); ++i)
         {
             int dev = temp_q[i].device().index();
-            fprintf(stderr, "[QATTN] Attn: Processing tensor %d on device %d\n", i, dev);
+            fprintf(stderr, "[QATTN] Attn: Processing tensor %d on device %d (from temp_q)\n", i, dev);
             if (t_device != -1 && t_device != dev) continue;
-            cudaSetDevice(dev);
-            fprintf(stderr, "[QATTN] Attn: cudaSetDevice(%d)\n", dev);
+            
+            const at::cuda::OptionalCUDAGuard device_guard(device_of(temp_q[i]));
+            int current_cuda_device;
+            cudaGetDevice(&current_cuda_device);
+            fprintf(stderr, "[QATTN] Attn: Current CUDA device after guard: %d\n", current_cuda_device);
+
             fprintf(stderr, "[QATTN] Attn: Using stream for device %d (pointer: %p)\n", dev, (void*)ctx->streams[dev]);
             fprintf(stderr, "[QATTN] Attn: k_cache[%d] device: %d, v_cache[%d] device: %d\n", i, k_cache[i].device().index(), i, v_cache[i].device().index());
             fprintf(stderr, "[QATTN] Attn: past_len_tp[%d] device: %d\n", i, past_len_tp[i].device().index());
@@ -720,7 +731,12 @@ void tp_attn_forward_
             for (int i = 0; i < temp_bc0.size(); ++i)
             {
                 int dev = temp_bc0[i].device().index();
-                cudaSetDevice(dev);
+                fprintf(stderr, "[QATTN] Add residual: Processing tensor %d on device %d (from temp_bc0)\n", i, dev);
+
+                const at::cuda::OptionalCUDAGuard device_guard(device_of(temp_bc0[i]));
+                int current_cuda_device;
+                cudaGetDevice(&current_cuda_device);
+                fprintf(stderr, "[QATTN] Add residual: Current CUDA device after guard: %d\n", current_cuda_device);
 
                 auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
                 at::cuda::setCurrentCUDAStream(stream);
