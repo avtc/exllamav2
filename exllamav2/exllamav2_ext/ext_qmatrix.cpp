@@ -272,8 +272,10 @@ void gemm_half_q_half_tp
 //        TORCH_CHECK(qm->width == c[i].size(1), "b and c have incompatible shapes")
 
         cudaSetDevice(dev);
-        fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: cudaSetDevice(%d)\n", dev);
+        fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: cudaSetDevice(%d) called.\n", dev);
         cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
+        
+        fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Calling gemm_half_q_half_cuda...\n");
         gemm_half_q_half_cuda
         (
             ctx->streams[dev],
@@ -288,6 +290,7 @@ void gemm_half_q_half_tp
             NULL,
             force_cuda
         );
+        fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: gemm_half_q_half_cuda returned.\n");
     }
 }
 
