@@ -262,6 +262,8 @@ void gemm_half_q_half_tp
     {
         QMatrix* qm = reinterpret_cast<QMatrix*> (b[i]);
         int dev = qm->device;
+        fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Iteration %zu, qm->device = %d\n", i, dev);
+        fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: a[%zu] device = %d, c[%zu] device = %d\n", i, a[i].device().index(), i, c[i].device().index());
         if (t_device != -1 && t_device != dev) continue;
 //        TORCH_CHECK_DTYPE(a[i], kHalf);
 //        TORCH_CHECK_DTYPE(c[i], kHalf);
@@ -270,6 +272,7 @@ void gemm_half_q_half_tp
 //        TORCH_CHECK(qm->width == c[i].size(1), "b and c have incompatible shapes")
 
         cudaSetDevice(dev);
+        fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: cudaSetDevice(%d)\n", dev);
         cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
         gemm_half_q_half_cuda
         (
