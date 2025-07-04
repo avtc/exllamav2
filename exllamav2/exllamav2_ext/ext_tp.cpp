@@ -54,12 +54,11 @@ ExtTPContext::ExtTPContext
 
     sync_events.resize(streams.size());
 
-    // Use actual device indices for event creation
-    for (int idx = 0; idx < all_devices.size(); ++idx)
+    for (int i = 0; i < streams.size(); ++i)
     {
-        int dev = all_devices[idx];
-        cudaSetDevice(dev);
-        cuda_check(cudaEventCreateWithFlags(&sync_events[dev], cudaEventDisableTiming));
+        if (!streams[i]) continue;
+        cudaSetDevice(i);
+        cuda_check(cudaEventCreateWithFlags(&sync_events[i], cudaEventDisableTiming));
     }
 
     #ifdef TP_MULTITHREADED
