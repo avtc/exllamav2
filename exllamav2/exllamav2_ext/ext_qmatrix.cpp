@@ -271,6 +271,7 @@ void gemm_half_q_half_tp
 
     // cudaSetDevice(t_device);
     fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: cudaSetDevice(%d) called.\n", t_device);
+    cudaDeviceSynchronize(); // Add synchronization
     cudaError_t err = cudaGetLastError();
     if (err != cudaSuccess) fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Error after cudaSetDevice: %s\n", cudaGetErrorString(err));
 
@@ -296,6 +297,7 @@ void gemm_half_q_half_tp
         NULL,
         force_cuda
     );
+    cudaDeviceSynchronize(); // Add synchronization
     err = cudaGetLastError();
     if (err != cudaSuccess) fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Error after gemm_half_q_half_cuda: %s\n", cudaGetErrorString(err));
     fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: gemm_half_q_half_cuda returned.\n");
