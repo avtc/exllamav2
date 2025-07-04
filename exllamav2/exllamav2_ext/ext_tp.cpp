@@ -361,7 +361,6 @@ void tp_gather_barrier
     else // Fallback to CPU bounce
     {
         fprintf(stderr, "Using CPU bounce for gather operation\n");
-    {
         for (int i = 0; i < split.size(); ++i)
         {
             int dev = std::get<0>(split[i]);
