@@ -212,10 +212,8 @@ void tp_broadcast
         int src_dev = source.device().index();
 
         if (src_dev >= 0)
-        {   // Only set device if this thread is responsible for the source device, or if not multithreaded
-            if (t_device == -1 || t_device == src_dev) {
-                cudaSetDevice(src_dev);
-            }
+        {
+            cudaSetDevice(src_dev);
             cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
             source_g = (void*) source.data_ptr();
@@ -240,10 +238,7 @@ void tp_broadcast
             void* target = (void*) targets[i].data_ptr();
             if (target == source_g) continue;
 
-            // Only set device if this thread is responsible for the target device
-            if (t_device == -1 || t_device == dev) {
-                cudaSetDevice(dev);
-            }
+            cudaSetDevice(dev);
             cudaStream_t stream = ctx->streams[dev];
             cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
         }
@@ -369,9 +364,7 @@ void tp_gather_barrier
 
             void* target = (void*) targets[i].data_ptr();
 
-            if (t_device == -1 || t_device == dev) { // Only set device if this thread is responsible for the target device
-                cudaSetDevice(dev);
-            }
+            cudaSetDevice(dev);
             cudaStream_t stream = ctx->streams[dev];
             cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
         }
@@ -503,7 +496,7 @@ void tp_all_reduce
     // If P2P is enabled and available, use NCCL AllReduce
     if (ctx->enable_p2p && ctx->can_p2p && ctx->all_devices.size() > 1) {
         ncclGroupStart();
-        for (int i = 0; i < num; ++i) {
+        for (int i = 0; i < (int)num; ++i) { // Cast num to int
             int dev = tensors[i].device().index();
             int comms_i = ctx->comms_index[dev];
             ncclAllReduce(tensors[i].data_ptr(), residuals[i].data_ptr(), tensors[i].numel(), ncclFloat16, ncclSum, ctx->comms[comms_i], ctx->streams[dev]);
@@ -512,13 +505,11 @@ void tp_all_reduce
     }
     else // Fallback to CPU bounce
     {
-        for (int i = 0; i < num; ++i)
+        for (int i = 0; i < (int)num; ++i) // Cast num to int
         {
             int dev = tensors[i].device().index();
-            if (t_device == -1 || t_device == dev) { // Only set device if this thread is responsible for the tensor's device
-                auto torch_stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
-                cudaSetDevice(dev);
-            }
+            auto torch_stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev); // Move declaration outside if
+            cudaSetDevice(dev);
             at::cuda::setCurrentCUDAStream(torch_stream);
 
             if (i > 0)
@@ -570,12 +561,10 @@ void tp_all_reduce
 
         int last_dev = tensors[num - 1].device().index();
 
-        for (int i = 0; i < num - 1; ++i)
+        for (int i = 0; i < (int)num - 1; ++i) // Cast num to int
         {
             int dev = tensors[i].device().index();
-            if (t_device == -1 || t_device == dev) { // Only set device if this thread is responsible for the tensor's device
-                cudaSetDevice(dev);
-            }
+            cudaSetDevice(dev);
 
             cuda_check(cudaStreamWaitEvent
             (
