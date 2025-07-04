@@ -212,8 +212,10 @@ void tp_broadcast
         int src_dev = source.device().index();
 
         if (src_dev >= 0)
-        {
-            cudaSetDevice(src_dev);
+        {   // Only set device if this thread is responsible for the source device, or if not multithreaded
+            if (t_device == -1 || t_device == src_dev) {
+                cudaSetDevice(src_dev);
+            }
             cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
             source_g = (void*) source.data_ptr();
@@ -238,7 +240,10 @@ void tp_broadcast
             void* target = (void*) targets[i].data_ptr();
             if (target == source_g) continue;
 
-            cudaSetDevice(dev);
+            // Only set device if this thread is responsible for the target device
+            if (t_device == -1 || t_device == dev) {
+                cudaSetDevice(dev);
+            }
             cudaStream_t stream = ctx->streams[dev];
             cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
         }
@@ -364,7 +369,9 @@ void tp_gather_barrier
 
             void* target = (void*) targets[i].data_ptr();
 
-            cudaSetDevice(dev);
+            if (t_device == -1 || t_device == dev) { // Only set device if this thread is responsible for the target device
+                cudaSetDevice(dev);
+            }
             cudaStream_t stream = ctx->streams[dev];
             cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
         }
@@ -508,8 +515,10 @@ void tp_all_reduce
         for (int i = 0; i < num; ++i)
         {
             int dev = tensors[i].device().index();
-            auto torch_stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
-            cudaSetDevice(dev);
+            if (t_device == -1 || t_device == dev) { // Only set device if this thread is responsible for the tensor's device
+                auto torch_stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
+                cudaSetDevice(dev);
+            }
             at::cuda::setCurrentCUDAStream(torch_stream);
 
             if (i > 0)
@@ -564,7 +573,9 @@ void tp_all_reduce
         for (int i = 0; i < num - 1; ++i)
         {
             int dev = tensors[i].device().index();
-            cudaSetDevice(dev);
+            if (t_device == -1 || t_device == dev) { // Only set device if this thread is responsible for the tensor's device
+                cudaSetDevice(dev);
+            }
 
             cuda_check(cudaStreamWaitEvent
             (
