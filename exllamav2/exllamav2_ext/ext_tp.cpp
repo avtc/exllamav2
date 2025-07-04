@@ -137,6 +137,11 @@ ExtTPContext::~ExtTPContext()
             ncclCommDestroy(comms[i]);
     }
 
+    for (int dev : all_devices)
+    {
+        const at::cuda::OptionalCUDAGuard device_guard(dev);
+        cuda_check(cudaEventDestroy(sync_events[dev]));
+    }
     cudaFreeHost(tp_data);
 }
 
