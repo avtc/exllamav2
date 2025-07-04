@@ -62,7 +62,7 @@ ExtTPContext::ExtTPContext
     for (int dev : all_devices)
     {
         cudaSetDevice(dev);
-        cuda_check(cudaEventCreateWithFlags(&sync_events[dev], cudaEventDisableTiming));
+        cuda_check(cudaEventCreateWithFlags(&sync_events[dev], device_streams[dev]));
     }
 
     #ifdef TP_MULTITHREADED
@@ -228,7 +228,7 @@ void tp_broadcast
             if (target == source_g) continue;
 
             cudaSetDevice(dev);
-            cudaStream_t stream = ctx->streams[dev];
+            cudaStream_t stream = ctx->device_streams.at(dev);
             cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
         }
     }
@@ -297,7 +297,7 @@ void tp_gather_barrier
         for (int i = 0; i < inputs.size(); ++i) {
             int dev = inputs[i].device().index();
             int comms_i = ctx->comms_index.at(dev);
-            ncclAllGather(inputs[i].data_ptr(), targets[i].data_ptr(), inputs[i].numel(), ncclFloat16, ctx->comms[comms_i], ctx->streams[dev]);
+            ncclAllGather(inputs[i].data_ptr(), targets[i].data_ptr(), inputs[i].numel(), ncclFloat16, ctx->comms[comms_i], ctx->device_streams.at(dev));
         }
         ncclGroupEnd();
     }
@@ -322,7 +322,7 @@ void tp_gather_barrier
                 src_cols * esize,
                 out_rows,
                 cudaMemcpyDeviceToHost,
-                ctx->streams[dev]
+                ctx->device_streams.at(dev)
             ));
         }
 
@@ -354,7 +354,7 @@ void tp_gather_barrier
             void* target = (void*) targets[i].data_ptr();
 
             cudaSetDevice(dev);
-            cudaStream_t stream = ctx->streams[dev];
+            cudaStream_t stream = ctx->device_streams.at(dev);
             cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
         }
     }
@@ -417,7 +417,7 @@ void tp_cross_device_barrier
     {
         int dev_i = ctx->all_devices[i];
         cudaSetDevice(dev_i);
-        cuda_check(cudaEventRecord(ctx->sync_events[dev_i], ctx->streams[dev_i]));
+        cuda_check(cudaEventRecord(ctx->sync_events[dev_i], ctx->device_streams.at(dev_i)));
     }
 
     for (int i = 0; i < ctx->all_devices.size(); ++i)
@@ -428,7 +428,7 @@ void tp_cross_device_barrier
             int dev_i = ctx->all_devices[i];
             int dev_j = ctx->all_devices[j];
             cudaSetDevice(dev_i);
-            cuda_check(cudaStreamWaitEvent(ctx->streams[dev_i], ctx->sync_events[dev_j], 0));
+            cuda_check(cudaStreamWaitEvent(ctx->device_streams.at(dev_i), ctx->sync_events[dev_j], 0));
         }
     }
 }
@@ -488,7 +488,7 @@ void tp_all_reduce
         for (int i = 0; i < num; ++i) {
             int dev = tensors[i].device().index();
             int comms_i = ctx->comms_index.at(dev);
-            ncclAllReduce(tensors[i].data_ptr(), residuals[i].data_ptr(), tensors[i].numel(), ncclFloat16, ncclSum, ctx->comms[comms_i], ctx->streams[dev]);
+            ncclAllReduce(tensors[i].data_ptr(), residuals[i].data_ptr(), tensors[i].numel(), ncclFloat16, ncclSum, ctx->comms[comms_i], ctx->device_streams.at(dev));
         }
         ncclGroupEnd();
     }
