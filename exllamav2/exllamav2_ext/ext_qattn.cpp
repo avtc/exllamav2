@@ -329,8 +329,8 @@ void tp_attn_forward_paged_
         {
             int dev = temp_bc0[i].device().index();
             if (t_device != -1 && t_device != dev) continue;
-            fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_bc0\n", dev);
-            cudaSetDevice(dev);
+            // fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_bc0\n", dev);
+            // cudaSetDevice(dev); // Removed redundant call
             rms_norm_cuda
             (
                 ctx->streams[dev],
@@ -360,12 +360,12 @@ void tp_attn_forward_paged_
             {
                 int dev = temp_q[i].device().index();
                 if (t_device != -1 && t_device != dev) continue;
-                fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_q/k/sin/cos/past_lens\n", dev);
-                cudaSetDevice(dev);
-
-                int num_heads = temp_q[i].size(1) / head_dim;
-                int num_kv_heads = temp_k[i].size(1) / head_dim;
-                int q_len = rows / batch_size;
+                // fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_q/k/sin/cos/past_lens\n", dev);
+                // cudaSetDevice(dev); // Removed redundant call
+    
+                    int num_heads = temp_q[i].size(1) / head_dim;
+                    int num_kv_heads = temp_k[i].size(1) / head_dim;
+                    int q_len = rows / batch_size;
 
                 rope_cuda_qk
                 (
@@ -394,8 +394,8 @@ void tp_attn_forward_paged_
         {
             int dev = temp_q[i].device().index();
             if (t_device != -1 && t_device != dev) continue;
-            fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_q/k/v/o (attn)\n", dev);
-            cudaSetDevice(dev);
+            // fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_q/k/v/o (attn)\n", dev);
+            // cudaSetDevice(dev); // Removed redundant call
 
             auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
             at::cuda::setCurrentCUDAStream(stream);
@@ -569,8 +569,8 @@ void tp_attn_forward_
         {
             int dev = temp_bc0[i].device().index();
             if (t_device != -1 && t_device != dev) continue;
-            fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_bc0\n", dev);
-            cudaSetDevice(dev);
+            // fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_bc0\n", dev);
+            // cudaSetDevice(dev); // Removed redundant call
             rms_norm_cuda
             (
                 ctx->streams[dev],
@@ -600,12 +600,12 @@ void tp_attn_forward_
             {
                 int dev = temp_q[i].device().index();
                 if (t_device != -1 && t_device != dev) continue;
-                fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_q/k/sin/cos/past_lens (RoPE)\n", dev);
-                cudaSetDevice(dev);
-
-                int num_heads = temp_q[i].size(1) / head_dim;
-                int num_kv_heads = temp_k[i].size(1) / head_dim;
-                int q_len = rows / batch_size;
+                // fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_q/k/sin/cos/past_lens (RoPE)\n", dev);
+                // cudaSetDevice(dev); // Removed redundant call
+    
+                    int num_heads = temp_q[i].size(1) / head_dim;
+                    int num_kv_heads = temp_k[i].size(1) / head_dim;
+                    int q_len = rows / batch_size;
 
                 rope_cuda_qk
                 (
@@ -634,8 +634,8 @@ void tp_attn_forward_
         {
             int dev = temp_q[i].device().index();
             if (t_device != -1 && t_device != dev) continue;
-            fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_q/k/v/o (Attn)\n", dev);
-            cudaSetDevice(dev);
+            // fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_q/k/v/o (Attn)\n", dev);
+            // cudaSetDevice(dev); // Removed redundant call
 
             auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
             at::cuda::setCurrentCUDAStream(stream);
@@ -700,8 +700,8 @@ void tp_attn_forward_
             for (int i = 0; i < temp_bc0.size(); ++i)
             {
                 int dev = temp_bc0[i].device().index();
-                fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_bc0 (add_residual)\n", dev);
-                cudaSetDevice(dev);
+                // fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_bc0 (add_residual)\n", dev);
+                // cudaSetDevice(dev);
 
                 auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
                 at::cuda::setCurrentCUDAStream(stream);
