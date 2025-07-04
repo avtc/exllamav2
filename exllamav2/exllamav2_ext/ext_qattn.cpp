@@ -574,10 +574,11 @@ void tp_attn_forward_
         for (int i = 0; i < pre_layernorm.size(); ++i)
         {
             int dev = temp_bc0[i].device().index();
+            fprintf(stderr, "[QATTN] Layernorm: Processing tensor %d on device %d\n", i, dev);
             if (t_device != -1 && t_device != dev) continue;
 
             cudaSetDevice(dev);
-            fprintf(stderr, "[QATTN] Layernorm on device %d\n", dev);
+            fprintf(stderr, "[QATTN] Layernorm: cudaSetDevice(%d)\n", dev);
             rms_norm_cuda
             (
                 ctx->streams[dev],
@@ -607,9 +608,14 @@ void tp_attn_forward_
             for (int i = 0; i < temp_q.size(); ++i)
             {
                 int dev = temp_q[i].device().index();
+                fprintf(stderr, "[QATTN] RoPE: Processing tensor %d on device %d\n", i, dev);
                 if (t_device != -1 && t_device != dev) continue;
                 cudaSetDevice(dev);
-                fprintf(stderr, "[QATTN] RoPE on device %d\n", dev);
+                fprintf(stderr, "[QATTN] RoPE: cudaSetDevice(%d)\n", dev);
+                fprintf(stderr, "[QATTN] RoPE: Using stream for device %d (pointer: %p)\n", dev, (void*)ctx->streams[dev]);
+                fprintf(stderr, "[QATTN] RoPE: Using sin for device %d (pointer: %p, device: %d)\n", dev, (void*)sin[dev].data_ptr(), sin[dev].device().index());
+                fprintf(stderr, "[QATTN] RoPE: Using cos for device %d (pointer: %p, device: %d)\n", dev, (void*)cos[dev].data_ptr(), cos[dev].device().index());
+                fprintf(stderr, "[QATTN] RoPE: Using past_len_tp for tensor %d (pointer: %p, device: %d)\n", i, (void*)past_len_tp[i].data_ptr(), past_len_tp[i].device().index());
 
                 int num_heads = temp_q[i].size(1) / head_dim;
                 int num_kv_heads = temp_k[i].size(1) / head_dim;
@@ -641,9 +647,13 @@ void tp_attn_forward_
         for (int i = 0; i < temp_q.size(); ++i)
         {
             int dev = temp_q[i].device().index();
+            fprintf(stderr, "[QATTN] Attn: Processing tensor %d on device %d\n", i, dev);
             if (t_device != -1 && t_device != dev) continue;
             cudaSetDevice(dev);
-            fprintf(stderr, "[QATTN] Attn on device %d\n", dev);
+            fprintf(stderr, "[QATTN] Attn: cudaSetDevice(%d)\n", dev);
+            fprintf(stderr, "[QATTN] Attn: Using stream for device %d (pointer: %p)\n", dev, (void*)ctx->streams[dev]);
+            fprintf(stderr, "[QATTN] Attn: k_cache[%d] device: %d, v_cache[%d] device: %d\n", i, k_cache[i].device().index(), i, v_cache[i].device().index());
+            fprintf(stderr, "[QATTN] Attn: past_len_tp[%d] device: %d\n", i, past_len_tp[i].device().index());
 
             auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
             at::cuda::setCurrentCUDAStream(stream);
