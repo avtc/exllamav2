@@ -7,7 +7,7 @@
 #define BROADCAST_RS 3
 #define BROADCAST_Q 4
 
-//#define TP_MULTITHREADED
+#define TP_MULTITHREADED
 
 #include <nccl.h>
 #include "cpp/threadpool.h"

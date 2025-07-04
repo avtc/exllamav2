@@ -429,20 +429,37 @@ void tp_cross_device_barrier
 //        cudaStreamSynchronize(ctx->streams[dev]);
 //    }
 
-    for (int i = 0; i < ctx->all_devices.size(); ++i)
-    {
-        int dev_i = ctx->all_devices[i];
+    #ifdef TP_MULTITHREADED
+        cudaSetDevice(t_device);
+    #endif
+
+    // for (int i = 0; i < ctx->all_devices.size(); ++i)
+    // {
+    //     int dev_i = ctx->all_devices[i];
+    //     cudaSetDevice(dev_i);
+    //     cuda_check(cudaEventRecord(ctx->sync_events[dev_i], ctx->device_streams.at(dev_i)));
+    // }
+
+    // for (int i = 0; i < ctx->all_devices.size(); ++i)
+    // {
+    //     for (int j = 0; j < ctx->all_devices.size(); ++j)
+    //     {
+    //         if (i == j) continue;
+    //         int dev_i = ctx->all_devices[i];
+    //         int dev_j = ctx->all_devices[j];
+    //         cudaSetDevice(dev_i);
+    //         cuda_check(cudaStreamWaitEvent(ctx->device_streams.at(dev_i), ctx->sync_events[dev_j], 0));
+    //     }
+    // }
+
+    for (int dev_i : ctx->all_devices) {
         cudaSetDevice(dev_i);
         cuda_check(cudaEventRecord(ctx->sync_events[dev_i], ctx->device_streams.at(dev_i)));
     }
 
-    for (int i = 0; i < ctx->all_devices.size(); ++i)
-    {
-        for (int j = 0; j < ctx->all_devices.size(); ++j)
-        {
-            if (i == j) continue;
-            int dev_i = ctx->all_devices[i];
-            int dev_j = ctx->all_devices[j];
+    for (int dev_i : ctx->all_devices) {
+        for (int dev_j : ctx->all_devices) {
+            if (dev_i == dev_j) continue;
             cudaSetDevice(dev_i);
             cuda_check(cudaStreamWaitEvent(ctx->device_streams.at(dev_i), ctx->sync_events[dev_j], 0));
         }

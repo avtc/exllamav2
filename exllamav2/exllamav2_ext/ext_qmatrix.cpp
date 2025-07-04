@@ -258,40 +258,37 @@ void gemm_half_q_half_tp
 {
     ExtTPContext* ctx = reinterpret_cast<ExtTPContext*> (tp_context);
 
-    for (size_t i = 0; i < a.size(); ++i)
-    {
-        QMatrix* qm = reinterpret_cast<QMatrix*> (b[i]);
-        int dev = qm->device;
-        fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Iteration %zu, qm->device = %d\n", i, dev);
-        fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: a[%zu] device = %d, c[%zu] device = %d\n", i, a[i].device().index(), i, c[i].device().index());
-        if (t_device != -1 && t_device != dev) continue;
-//        TORCH_CHECK_DTYPE(a[i], kHalf);
-//        TORCH_CHECK_DTYPE(c[i], kHalf);
-//        TORCH_CHECK_SHAPES(a[i], 0, c[i], 0, 1);
-//        TORCH_CHECK(qm->height == a[i].size(1), "a and b have incompatible shapes")
-//        TORCH_CHECK(qm->width == c[i].size(1), "b and c have incompatible shapes")
+    QMatrix* qm = reinterpret_cast<QMatrix*> (b[t_device]);
+    // int dev = qm->device;
+    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Iteration %d, qm->device = %d\n", t_device, qm->device);
+    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: a[%d] device = %d, c[%d] device = %d\n", t_device, a[t_device].device().index(), t_device, c[t_device].device().index());
+    // if (t_device != -1 && t_device != dev) continue;
+//        TORCH_CHECK_DTYPE(a[t_device], kHalf);
+//        TORCH_CHECK_DTYPE(c[t_device], kHalf);
+//        TORCH_CHECK_SHAPES(a[t_device], 0, c[t_device], 0, 1);
+//        TORCH_CHECK(qm->height == a[t_device].size(1), "a and b have incompatible shapes")
+//        TORCH_CHECK(qm->width == c[t_device].size(1), "b and c have incompatible shapes")
 
-        cudaSetDevice(dev);
-        fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: cudaSetDevice(%d) called.\n", dev);
-        cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
-        
-        fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Calling gemm_half_q_half_cuda...\n");
-        gemm_half_q_half_cuda
-        (
-            ctx->streams[dev],
-            cublas_handle,
-            (const half*) a[i].data_ptr(),
-            qm,
-            (half*) c[i].data_ptr(),
-            c[i].size(0), // m
-            c[i].size(1), // n
-            a[i].size(1), // k
-            true,
-            NULL,
-            force_cuda
-        );
-        fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: gemm_half_q_half_cuda returned.\n");
-    }
+    // cudaSetDevice(t_device);
+    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: cudaSetDevice(%d) called.\n", t_device);
+    cublasHandle_t cublas_handle = at::cuda::getCurrentCUDABlasHandle();
+    
+    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: Calling gemm_half_q_half_cuda...\n");
+    gemm_half_q_half_cuda
+    (
+        ctx->streams[t_device],
+        cublas_handle,
+        (const half*) a[t_device].data_ptr(),
+        qm,
+        (half*) c[t_device].data_ptr(),
+        c[t_device].size(0), // m
+        c[t_device].size(1), // n
+        a[t_device].size(1), // k
+        true,
+        NULL,
+        force_cuda
+    );
+    fprintf(stderr, "[QMATRIX] gemm_half_q_half_tp: gemm_half_q_half_cuda returned.\n");
 }
 
 // Convert tensors
