@@ -719,7 +719,6 @@ void tp_attn_forward_
         // Output projection
         fprintf(stderr, "[QATTN] Output projection\n");
         gemm_half_q_half_tp(temp_bc2, o_proj, temp_o, false, tp_context, t_device);
-        fprintf(stderr, "[QATTN] Output projection: After gemm_half_q_half_tp. Current CUDA memory allocated: %lld bytes, max: %lld bytes (device %d)\n", at::cuda::current_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), at::cuda::max_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), (t_device == -1 ? at::cuda::current_device() : t_device));
 
         // Add residual
         // TODO: libtorch adds a bit of overhead here that could be removed with a custom strided add_ kernel
