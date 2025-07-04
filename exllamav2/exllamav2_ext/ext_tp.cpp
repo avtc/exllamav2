@@ -7,7 +7,6 @@
 #include <cstdio>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <unordered_map>
 
 #include "config.h"
 #include "ext_tp.h"
@@ -49,20 +48,16 @@ ExtTPContext::ExtTPContext
         pinned_size = pt.numel() * pt.element_size();
     }
 
-    // Find max device index
-    int max_dev = -1;
-    for (int i = 0; i < streams.size(); ++i)
-        if (streams[i] && i > max_dev) max_dev = i;
-
     for (int i = 0; i < streams.size(); ++i)
         if (streams[i]) all_devices.push_back(i);
 
-    sync_events.resize(max_dev + 1);
+    sync_events.resize(streams.size());
 
-    for (int dev : all_devices)
+    for (int i = 0; i < streams.size(); ++i)
     {
-        cudaSetDevice(dev);
-        cuda_check(cudaEventCreateWithFlags(&sync_events[dev], device_streams[dev]));
+        if (!streams[i]) continue;
+        cudaSetDevice(i);
+        cuda_check(cudaEventCreateWithFlags(&sync_events[i], cudaEventDisableTiming));
     }
 
     #ifdef TP_MULTITHREADED
@@ -104,7 +99,7 @@ ExtTPContext::ExtTPContext
         // NCCL initialization
         comms.resize(all_devices.size());
         ncclCommInitAll(&comms[0], all_devices.size(), &all_devices[0]);
-        comms_index.clear();
+        comms_index.resize(streams.size());
         for (int i = 0; i < all_devices.size(); ++i)
             comms_index[all_devices[i]] = i;
     }
@@ -189,7 +184,7 @@ void tp_broadcast
         ncclGroupStart();
         for (int i = 0; i < targets.size(); ++i) {
             int dev = targets[i].device().index();
-            int comms_i = ctx->comms_index.at(dev);
+            int comms_i = ctx->comms_index[dev];
             ncclBroadcast(source.data_ptr(), targets[i].data_ptr(), source.numel(), ncclFloat16, src_dev, ctx->comms[comms_i], stream);
         }
         ncclGroupEnd();
@@ -228,7 +223,7 @@ void tp_broadcast
             if (target == source_g) continue;
 
             cudaSetDevice(dev);
-            cudaStream_t stream = ctx->device_streams.at(dev);
+            cudaStream_t stream = ctx->streams[dev];
             cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
         }
     }
@@ -296,8 +291,8 @@ void tp_gather_barrier
         ncclGroupStart();
         for (int i = 0; i < inputs.size(); ++i) {
             int dev = inputs[i].device().index();
-            int comms_i = ctx->comms_index.at(dev);
-            ncclAllGather(inputs[i].data_ptr(), targets[i].data_ptr(), inputs[i].numel(), ncclFloat16, ctx->comms[comms_i], ctx->device_streams.at(dev));
+            int comms_i = ctx->comms_index[dev];
+            ncclAllGather(inputs[i].data_ptr(), targets[i].data_ptr(), inputs[i].numel(), ncclFloat16, ctx->comms[comms_i], ctx->streams[dev]);
         }
         ncclGroupEnd();
     }
@@ -322,7 +317,7 @@ void tp_gather_barrier
                 src_cols * esize,
                 out_rows,
                 cudaMemcpyDeviceToHost,
-                ctx->device_streams.at(dev)
+                ctx->streams[dev]
             ));
         }
 
@@ -354,7 +349,7 @@ void tp_gather_barrier
             void* target = (void*) targets[i].data_ptr();
 
             cudaSetDevice(dev);
-            cudaStream_t stream = ctx->device_streams.at(dev);
+            cudaStream_t stream = ctx->streams[dev];
             cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
         }
     }
@@ -417,7 +412,7 @@ void tp_cross_device_barrier
     {
         int dev_i = ctx->all_devices[i];
         cudaSetDevice(dev_i);
-        cuda_check(cudaEventRecord(ctx->sync_events[dev_i], ctx->device_streams.at(dev_i)));
+        cuda_check(cudaEventRecord(ctx->sync_events[dev_i], ctx->streams[dev_i]));
     }
 
     for (int i = 0; i < ctx->all_devices.size(); ++i)
@@ -428,7 +423,7 @@ void tp_cross_device_barrier
             int dev_i = ctx->all_devices[i];
             int dev_j = ctx->all_devices[j];
             cudaSetDevice(dev_i);
-            cuda_check(cudaStreamWaitEvent(ctx->device_streams.at(dev_i), ctx->sync_events[dev_j], 0));
+            cuda_check(cudaStreamWaitEvent(ctx->streams[dev_i], ctx->sync_events[dev_j], 0));
         }
     }
 }
@@ -487,8 +482,8 @@ void tp_all_reduce
         ncclGroupStart();
         for (int i = 0; i < num; ++i) {
             int dev = tensors[i].device().index();
-            int comms_i = ctx->comms_index.at(dev);
-            ncclAllReduce(tensors[i].data_ptr(), residuals[i].data_ptr(), tensors[i].numel(), ncclFloat16, ncclSum, ctx->comms[comms_i], ctx->device_streams.at(dev));
+            int comms_i = ctx->comms_index[dev];
+            ncclAllReduce(tensors[i].data_ptr(), residuals[i].data_ptr(), tensors[i].numel(), ncclFloat16, ncclSum, ctx->comms[comms_i], ctx->streams[dev]);
         }
         ncclGroupEnd();
     }
