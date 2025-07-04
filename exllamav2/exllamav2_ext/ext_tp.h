@@ -39,6 +39,8 @@ public:
     bool enable_p2p;
     bool can_p2p;
 
+    std::unordered_map<int, cudaStream_t> device_streams;
+
     ExtTPContext
     (
         std::vector<std::tuple<int, int, int>> _kv_split,
