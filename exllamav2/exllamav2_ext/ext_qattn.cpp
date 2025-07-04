@@ -597,9 +597,10 @@ void tp_attn_forward_
         if (rope_style != ROPE_STYLE_NONE)
         {
             for (int i = 0; i < temp_q.size(); ++i)
+            {
                 int dev = temp_q[i].device().index();
                 if (t_device != -1 && t_device != dev) continue;
-                fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_q/k/sin/cos/past_lens\n", dev);
+                fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_q/k/sin/cos/past_lens (RoPE)\n", dev);
                 cudaSetDevice(dev);
 
                 int num_heads = temp_q[i].size(1) / head_dim;
@@ -630,9 +631,10 @@ void tp_attn_forward_
         // Attn
 
         for (int i = 0; i < temp_q.size(); ++i)
+        {
             int dev = temp_q[i].device().index();
             if (t_device != -1 && t_device != dev) continue;
-            fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_q/k/v/o (attn)\n", dev);
+            fprintf(stderr, "DEBUG: Attempting cudaSetDevice(%d) for temp_q/k/v/o (Attn)\n", dev);
             cudaSetDevice(dev);
 
             auto stream = at::cuda::getStreamFromExternal(ctx->streams[dev], dev);
