@@ -81,7 +81,7 @@ QMatrix::QMatrix
     temp_dq(_temp_dq),
     max_dq_rows(_max_dq_rows)
 {
-    const at::cuda::OptionalCUDAGuard device_guard(device); // Use guard
+    cudaSetDevice(device);
 
     failed = false;
 
