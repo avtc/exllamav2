@@ -3,6 +3,7 @@
 #include <ATen/cuda/CUDAContext.h>
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
+#include <nccl.h>
 #include <cstdint>
 #include <cstdio>
 #include <pybind11/pybind11.h>
@@ -96,12 +97,35 @@ ExtTPContext::ExtTPContext
     fprintf(stderr, "TP Debug: can_p2p (final) = %d\n", (int)can_p2p);
 
     if (enable_p2p && can_p2p) {
-        // NCCL initialization
+        // Verify NCCL version
+        int nccl_version = 0;
+        ncclGetVersion(&nccl_version);
+        if (nccl_version < 2700) {  // Minimum version 2.7.0
+            fprintf(stderr, "NCCL Error: Version %d is too old, requires at least 2.7.0\n", nccl_version);
+            can_p2p = false;
+            return;
+        }
+        
+        // NCCL initialization with error handling
         comms.resize(all_devices.size());
-        ncclCommInitAll(&comms[0], all_devices.size(), &all_devices[0]);
+        ncclResult_t nccl_status = ncclCommInitAll(&comms[0], all_devices.size(), &all_devices[0]);
+        if (nccl_status != ncclSuccess) {
+            fprintf(stderr, "NCCL Error: Failed to initialize communicators (code: %d)\n", nccl_status);
+            can_p2p = false;
+            return;
+        }
+        
+        // Synchronize after initialization
+        for (int i = 0; i < all_devices.size(); ++i) {
+            cudaSetDevice(all_devices[i]);
+            cudaStreamSynchronize(streams[all_devices[i]]);
+        }
+        
         comms_index.resize(streams.size());
         for (int i = 0; i < all_devices.size(); ++i)
             comms_index[all_devices[i]] = i;
+        
+        fprintf(stderr, "NCCL initialized successfully with %d devices\n", (int)all_devices.size());
     }
 }
 
@@ -112,8 +136,16 @@ ExtTPContext::~ExtTPContext()
     #endif
 
     if (enable_p2p && can_p2p) {
-        for (int i = 0; i < comms.size(); ++i)
-            ncclCommDestroy(comms[i]);
+        for (int i = 0; i < comms.size(); ++i) {
+            if (comms[i] != nullptr) {
+                ncclResult_t nccl_status = ncclCommDestroy(comms[i]);
+                if (nccl_status != ncclSuccess) {
+                    fprintf(stderr, "NCCL Warning: Failed to destroy communicator %d (code: %d)\n", i, nccl_status);
+                }
+                comms[i] = nullptr;
+            }
+        }
+        fprintf(stderr, "NCCL communicators destroyed\n");
     }
 
     cudaFreeHost(tp_data);
@@ -181,13 +213,27 @@ void tp_broadcast
         cudaSetDevice(src_dev);
         cudaStream_t stream = at::cuda::getCurrentCUDAStream().stream();
 
-        ncclGroupStart();
+        ncclResult_t nccl_status = ncclGroupStart();
+        if (nccl_status != ncclSuccess) {
+            fprintf(stderr, "NCCL Error: Failed to start broadcast group (code: %d)\n", nccl_status);
+            return;
+        }
+        
         for (int i = 0; i < targets.size(); ++i) {
             int dev = targets[i].device().index();
             int comms_i = ctx->comms_index[dev];
-            ncclBroadcast(source.data_ptr(), targets[i].data_ptr(), source.numel(), ncclFloat16, src_dev, ctx->comms[comms_i], stream);
+            nccl_status = ncclBroadcast(source.data_ptr(), targets[i].data_ptr(), source.numel(), ncclFloat16, src_dev, ctx->comms[comms_i], stream);
+            if (nccl_status != ncclSuccess) {
+                fprintf(stderr, "NCCL Error: Failed broadcast to device %d (code: %d)\n", dev, nccl_status);
+                ncclGroupEnd();
+                return;
+            }
         }
-        ncclGroupEnd();
+        
+        nccl_status = ncclGroupEnd();
+        if (nccl_status != ncclSuccess) {
+            fprintf(stderr, "NCCL Error: Failed to end broadcast group (code: %d)\n", nccl_status);
+        }
     }
     else // Fallback to CPU bounce
     {
@@ -224,6 +270,7 @@ void tp_broadcast
 
             cudaSetDevice(dev);
             cudaStream_t stream = ctx->streams[dev];
+            fprintf(stderr, "Copying gathered data to device %d\n", dev);
             cuda_check(cudaMemcpyAsync(target, ctx->pinned_temp[buffer], size, cudaMemcpyHostToDevice, stream));
         }
     }
@@ -288,15 +335,32 @@ void tp_gather_barrier
 
     // If P2P is enabled and available, use NCCL AllGather
     if (ctx->enable_p2p && ctx->can_p2p && ctx->all_devices.size() > 1) {
-        ncclGroupStart();
+        fprintf(stderr, "Using NCCL AllGather with %d devices\n", (int)ctx->all_devices.size());
+        ncclResult_t nccl_status = ncclGroupStart();
+        if (nccl_status != ncclSuccess) {
+            fprintf(stderr, "NCCL Error: Failed to start group operation (code: %d)\n", nccl_status);
+            return;
+        }
+        
         for (int i = 0; i < inputs.size(); ++i) {
             int dev = inputs[i].device().index();
             int comms_i = ctx->comms_index[dev];
-            ncclAllGather(inputs[i].data_ptr(), targets[i].data_ptr(), inputs[i].numel(), ncclFloat16, ctx->comms[comms_i], ctx->streams[dev]);
+            nccl_status = ncclAllGather(inputs[i].data_ptr(), targets[i].data_ptr(), inputs[i].numel(), ncclFloat16, ctx->comms[comms_i], ctx->streams[dev]);
+            if (nccl_status != ncclSuccess) {
+                fprintf(stderr, "NCCL Error: Failed AllGather on device %d (code: %d)\n", dev, nccl_status);
+                ncclGroupEnd();
+                return;
+            }
         }
-        ncclGroupEnd();
+        
+        nccl_status = ncclGroupEnd();
+        if (nccl_status != ncclSuccess) {
+            fprintf(stderr, "NCCL Error: Failed to end group operation (code: %d)\n", nccl_status);
+        }
     }
     else // Fallback to CPU bounce
+    {
+        fprintf(stderr, "Using CPU bounce for gather operation\n");
     {
         for (int i = 0; i < split.size(); ++i)
         {
@@ -308,6 +372,7 @@ void tp_gather_barrier
             uint8_t* dst = ((uint8_t*) ctx->pinned_temp[buffer]) + std::get<1>(split[i]) * esize * dim;
 
             cudaSetDevice(dev);
+            fprintf(stderr, "Copying data from device %d to host buffer\n", dev);
             cuda_check(cudaMemcpy2DAsync
             (
                 dst,
@@ -479,13 +544,27 @@ void tp_all_reduce
 
     // If P2P is enabled and available, use NCCL AllReduce
     if (ctx->enable_p2p && ctx->can_p2p && ctx->all_devices.size() > 1) {
-        ncclGroupStart();
+        ncclResult_t nccl_status = ncclGroupStart();
+        if (nccl_status != ncclSuccess) {
+            fprintf(stderr, "NCCL Error: Failed to start all-reduce group (code: %d)\n", nccl_status);
+            return;
+        }
+        
         for (int i = 0; i < num; ++i) {
             int dev = tensors[i].device().index();
             int comms_i = ctx->comms_index[dev];
-            ncclAllReduce(tensors[i].data_ptr(), residuals[i].data_ptr(), tensors[i].numel(), ncclFloat16, ncclSum, ctx->comms[comms_i], ctx->streams[dev]);
+            nccl_status = ncclAllReduce(tensors[i].data_ptr(), residuals[i].data_ptr(), tensors[i].numel(), ncclFloat16, ncclSum, ctx->comms[comms_i], ctx->streams[dev]);
+            if (nccl_status != ncclSuccess) {
+                fprintf(stderr, "NCCL Error: Failed all-reduce on device %d (code: %d)\n", dev, nccl_status);
+                ncclGroupEnd();
+                return;
+            }
         }
-        ncclGroupEnd();
+        
+        nccl_status = ncclGroupEnd();
+        if (nccl_status != ncclSuccess) {
+            fprintf(stderr, "NCCL Error: Failed to end all-reduce group (code: %d)\n", nccl_status);
+        }
     }
     else // Fallback to CPU bounce
     {
