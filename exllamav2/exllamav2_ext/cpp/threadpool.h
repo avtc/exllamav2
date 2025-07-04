@@ -50,7 +50,7 @@ public:
         }
     }
 
-    ThreadPool()
+    ~ThreadPool()
     {
         {
             std::unique_lock<std::mutex> lock(queue_mutex);
