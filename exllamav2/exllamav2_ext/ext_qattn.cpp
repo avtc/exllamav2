@@ -564,7 +564,6 @@ void tp_attn_forward_
         fprintf(stderr, "[QATTN] temp_q size: %zu\n", temp_q.size());
         fprintf(stderr, "[QATTN] pre_layernorm size: %zu\n", pre_layernorm.size());
         fprintf(stderr, "[QATTN] Begin run_thread\n");
-        fprintf(stderr, "[QATTN] Begin run_thread - Initial CUDA memory allocated: %lld bytes, max: %lld bytes (device %d)\n", at::cuda::current_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), at::cuda::max_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), (t_device == -1 ? at::cuda::current_device() : t_device));
 
         // Broadcast
 
@@ -596,17 +595,14 @@ void tp_attn_forward_
                 false,  // TODO: FP32 residual
                 false
             );
-            fprintf(stderr, "[QATTN] Layernorm: After RMS norm. Mem allocated: %lld bytes, max: %lld bytes (device %d)\n", at::cuda::current_memory_allocated(dev), at::cuda::max_memory_allocated(dev), dev);
+            );
         }
-        fprintf(stderr, "[QATTN] Layernorm: Loop finished. Current CUDA memory allocated: %lld bytes, max: %lld bytes (device %d)\n", at::cuda::current_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), at::cuda::max_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), (t_device == -1 ? at::cuda::current_device() : t_device));
 
         // Q, K, V
-
         fprintf(stderr, "[QATTN] GEMM Q/K/V\n");
         gemm_half_q_half_tp(temp_bc1, q_proj, temp_q, false, tp_context, t_device);
         gemm_half_q_half_tp(temp_bc1, k_proj, temp_k, false, tp_context, t_device);
         gemm_half_q_half_tp(temp_bc1, v_proj, temp_v, false, tp_context, t_device);
-        fprintf(stderr, "[QATTN] GEMM Q/K/V: All GEMMs completed. Current CUDA memory allocated: %lld bytes, max: %lld bytes (device %d)\n", at::cuda::current_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), at::cuda::max_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), (t_device == -1 ? at::cuda::current_device() : t_device));
 
         // RoPE
 
@@ -650,9 +646,7 @@ void tp_attn_forward_
                     rope_style == ROPE_STYLE_NEOX,
                     head_dim  // TODO: partial_rotary_factor
                 );
-                fprintf(stderr, "[QATTN] RoPE: After rope_cuda_qk. Mem allocated: %lld bytes, max: %lld bytes (device %d)\n", at::cuda::current_memory_allocated(dev), at::cuda::max_memory_allocated(dev), dev);
             }
-            fprintf(stderr, "[QATTN] RoPE: Loop finished. Current CUDA memory allocated: %lld bytes, max: %lld bytes (device %d)\n", at::cuda::current_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), at::cuda::max_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), (t_device == -1 ? at::cuda::current_device() : t_device));
         }
 
         // Attn
@@ -689,7 +683,6 @@ void tp_attn_forward_
                 #endif
 
                 auto none = py::none();
-                fprintf(stderr, "[QATTN] Attn: Before fwd_kvcache_func. Mem allocated: %lld bytes, max: %lld bytes (device %d)\n", at::cuda::current_memory_allocated(dev), at::cuda::max_memory_allocated(dev), dev);
 
                 fwd_kvcache_func
                 (
@@ -714,20 +707,16 @@ void tp_attn_forward_
                     true,  // rotary_interleaved
                     0  // num_splits
                 );
-                fprintf(stderr, "[QATTN] Attn: After fwd_kvcache_func. Mem allocated: %lld bytes, max: %lld bytes (device %d)\n", at::cuda::current_memory_allocated(dev), at::cuda::max_memory_allocated(dev), dev);
             }
 
         }
-        fprintf(stderr, "[QATTN] Attn: Loop finished. Current CUDA memory allocated: %lld bytes, max: %lld bytes (device %d)\n", at::cuda::current_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), at::cuda::max_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), (t_device == -1 ? at::cuda::current_device() : t_device));
 
         // Allgather
 
         fprintf(stderr, "[QATTN] Allgather\n");
         tp_gather_barrier(tp_context, 1, temp_o, BROADCAST_Q, temp_bc2, BROADCAST_Q, head_dim, t_device, sync);
-        fprintf(stderr, "[QATTN] Allgather: After tp_gather_barrier. Current CUDA memory allocated: %lld bytes, max: %lld bytes (device %d)\n", at::cuda::current_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), at::cuda::max_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), (t_device == -1 ? at::cuda::current_device() : t_device));
 
         // Output projection
-
         fprintf(stderr, "[QATTN] Output projection\n");
         gemm_half_q_half_tp(temp_bc2, o_proj, temp_o, false, tp_context, t_device);
         fprintf(stderr, "[QATTN] Output projection: After gemm_half_q_half_tp. Current CUDA memory allocated: %lld bytes, max: %lld bytes (device %d)\n", at::cuda::current_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), at::cuda::max_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), (t_device == -1 ? at::cuda::current_device() : t_device));
@@ -755,7 +744,6 @@ void tp_attn_forward_
                 int w = temp_o[i].size(1);
                 auto res_slice = temp_bc0[i].narrow(1, offset, w);
                 temp_o[i].add_(res_slice);
-                fprintf(stderr, "[QATTN] Add residual: After add_. Mem allocated: %lld bytes, max: %lld bytes (device %d)\n", at::cuda::current_memory_allocated(dev), at::cuda::max_memory_allocated(dev), dev);
                 offset += w;
             }
         }
@@ -769,7 +757,6 @@ void tp_attn_forward_
         tp_gather_barrier(tp_context, 0, temp_o, BROADCAST_Q, temp_o, -1, head_dim, t_device, sync);
 
         fprintf(stderr, "[QATTN] End run_thread\n");
-        fprintf(stderr, "[QATTN] End run_thread - Final CUDA memory allocated: %lld bytes, max: %lld bytes (device %d)\n", at::cuda::current_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), at::cuda::max_memory_allocated(t_device == -1 ? at::cuda::current_device() : t_device), (t_device == -1 ? at::cuda::current_device() : t_device));
     };
 
     #ifdef TP_MULTITHREADED
